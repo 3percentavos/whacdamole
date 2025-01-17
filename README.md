@@ -8,9 +8,9 @@
 </div>
 
 
-**Whacdamole** is a single Python script that acts as a Kubernetes operator and CLI tool for Kubernetes app development. Whacdamole automates Docker image builds, Helm and Kustomize deployments, and implements GitOps.
+**Whacdamole** is a single Python script that acts as a Kubernetes CD operator and CLI tool for Kubernetes app development. Whacdamole automates Docker image builds, Helm and Kustomize deployments, and implements GitOps.
 
-At some point I realised that I didn't want to have to build and deploy a hundred different projects to just verify a single application on Kubernetes. I decided to make this monstrosity. Maybe you might find this useful, but be warned this is the opposite of a CNCF project -- it's the evil version where everything flies.
+At some point I realised that I didn't want to have to build and deploy a hundred different projects to just verify a single application on Kubernetes. I decided to make this monstrosity to try and pack everything into yet-yaml-config that covers probably most of what you'd need to prototype an app for Kubernetes (hence Whackamole). Maybe you might find this useful, but be warned this is the opposite of a CNCF project -- this project is in an evil version of CNCF project where you shouldn't be using it.
 
 ## Prerequisites 🚚
 
