@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+
+import argparse
+import sys
+import os
+import subprocess
+import yaml
+import tempfile
+import threading
+import time
+from kubernetes import client, config, watch
+
+def main():
+    parser = argparse.ArgumentParser(prog='whacdamole', description='Whacdamole CLI')
+    subparsers = parser.add_subparsers(dest='command')
+
+    # registry command
+    registry_parser = subparsers.add_parser('registry', help='Manage local Docker registry')
+    registry_subparsers = registry_parser.add_subparsers(dest='subcommand')
+
+    # registry up
+    registry_up_parser = registry_subparsers.add_parser('up', help='Start the local registry')
+    registry_up_parser.add_argument('--image', default='registry:2', help='Docker image to use for the registry')
+
+    # build command
+    build_parser = subparsers.add_parser('build', help='Build and push Docker images')
+
+    # deploy command
+    deploy_parser = subparsers.add_parser('deploy', help='Deploy Helm and Kustomize configurations')
+
+    # gitops command
+    gitops_parser = subparsers.add_parser('gitops', help='Start GitOps routine')
+
+    args = parser.parse_args()
+
+    if args.command == 'registry':
+        if args.subcommand == 'up':
+            registry_up(args)
+        else:
+            registry_parser.print_help()
+    elif args.command == 'build':
+        build(args)
+    elif args.command == 'deploy':
+        deploy(args)
+    elif args.command == 'gitops':
+        gitops(args)
+    else:
+        parser.print_help()
+
+def registry_up(args):
+    print('Starting local Docker registry...')
+    image = args.image
+    # Read configuration from .whacdamole
+    config_data = load_whacdamole_config()
+    port = config_data['spec']['localEnvironment']['localDockerRegistryPort']
+    container_name = 'whacdamole-registry'
+
+    # Check if the registry is already running
+    result = subprocess.run(['docker', 'ps', '-q', '-f', f'name={container_name}'], stdout=subprocess.PIPE)
+    if result.stdout.strip():
+        print('Local registry is already running.')
+        return
+
+    # Start the Docker registry container
+    try:
+        subprocess.run([
+            'docker', 'run', '-d',
+            '--name', container_name,
+            '-p', f'{port}:5000',
+            image
+        ], check=True)
+        print(f'Local registry started on port {port}.')
+    except subprocess.CalledProcessError as e:
+        print('Failed to start local Docker registry.')
+        sys.exit(1)
+
+def build(args):
+    print('Building Docker images...')
+    config_data = load_whacdamole_config()
+    docker_images = config_data['spec']['dockerImages']
+
+    for image in docker_images:
+        name = image['name']
+        tags = image['tags']
+        registry = image['registry']
+        directory = image['directory']
+
+        for tag in tags:
+            full_image_name = f"{registry}/{name}:{tag}"
+            image_build_path = os.path.join(os.getcwd(), directory)
+
+            print(f'Building image {full_image_name} from {image_build_path}...')
+            try:
+                # Build the Docker image
+                subprocess.run([
+                    'docker', 'build',
+                    '-t', full_image_name,
+                    image_build_path
+                ], check=True)
+
+                # Push the image to the registry
+                subprocess.run([
+                    'docker', 'push', full_image_name
+                ], check=True)
+
+                print(f'Image {full_image_name} built and pushed successfully.')
+            except subprocess.CalledProcessError as e:
+                print(f'Failed to build or push image {full_image_name}.')
+                sys.exit(1)
+
+def deploy(args):
+    print('Deploying configurations...')
+    config_data = load_whacdamole_config()
+
+    # Handle Helm deployments
+    helm_deployments = config_data['spec'].get('helmDeployments', [])
+    for deployment in helm_deployments:
+        helm_deploy(deployment)
+
+    # Handle Kustomize deployments
+    kustomize_deployments = config_data['spec'].get('kustomizeDeployments', [])
+    for deployment in kustomize_deployments:
+        kustomize_deploy(deployment)
+
+def helm_deploy(deployment):
+    git_repo = deployment.get('gitRepository')
+    branch = deployment.get('branchToWatch', 'main')
+    chart_path = deployment['chartPath']
+    values = deployment.get('values', '')
+    overrides = deployment.get('overrides', {})
+
+    # Clone the repository if necessary
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if git_repo:
+            print(f'Cloning {git_repo}...')
+            subprocess.run(['git', 'clone', '--branch', branch, git_repo, tmpdir], check=True)
+            chart_full_path = os.path.join(tmpdir, chart_path)
+        else:
+            chart_full_path = os.path.join(os.getcwd(), chart_path)
+
+        # Prepare values file
+        if values:
+            values_file = os.path.join(tmpdir, 'values.yaml')
+            with open(values_file, 'w') as f:
+                f.write(values)
+        else:
+            values_file = None
+
+        # Apply overrides
+        set_overrides = []
+        for key, value in overrides.items():
+            set_overrides.extend(['--set', f'{key}={value}'])
+
+        # Deploy using Helm
+        helm_cmd = [
+            'helm', 'upgrade', '--install', '--atomic',
+            deployment.get('releaseName', 'my-release'),
+            chart_full_path
+        ]
+
+        if values_file:
+            helm_cmd.extend(['-f', values_file])
+
+        helm_cmd.extend(set_overrides)
+
+        try:
+            print(f'Deploying Helm chart from {chart_full_path}...')
+            subprocess.run(helm_cmd, check=True)
+            print('Helm deployment successful.')
+        except subprocess.CalledProcessError as e:
+            print('Helm deployment failed.')
+            sys.exit(1)
+
+def kustomize_deploy(deployment):
+    git_repo = deployment.get('gitRepository')
+    branch = deployment.get('branchToWatch', 'main')
+    kustomize_path = deployment.get('kustomizePath', '.')
+
+    # Clone the repository if necessary
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if git_repo:
+            print(f'Cloning {git_repo}...')
+            subprocess.run(['git', 'clone', '--branch', branch, git_repo, tmpdir], check=True)
+            kustomize_full_path = os.path.join(tmpdir, kustomize_path)
+        else:
+            kustomize_full_path = os.path.join(os.getcwd(), kustomize_path)
+
+        # Apply the Kustomize manifests
+        try:
+            print(f'Applying Kustomize manifests from {kustomize_full_path}...')
+            subprocess.run([
+                'kubectl', 'apply', '-k', kustomize_full_path
+            ], check=True)
+            print('Kustomize deployment successful.')
+        except subprocess.CalledProcessError as e:
+            print('Kustomize deployment failed.')
+            sys.exit(1)
+
+def poll_whacdamoles():
+    api = client.CustomObjectsApi()
+    group = 'whacdamole.example.com'
+    version = 'v1'
+    plural = 'whacdemoles'
+    namespace = os.getenv('NAMESPACE', 'default')
+
+    try:
+        whacdamole_list = api.list_namespaced_custom_object(group, version, namespace, plural)
+        whacdamoles = whacdamole_list['items']
+        for whacdamole in whacdamoles:
+            handle_whacdamole_resource(whacdamole)
+    except client.exceptions.ApiException as e:
+        print(f'Error polling Whacdamole resources: {e}')
+
+def polling_routine():
+    while True:
+        print('Polling for Whacdamole resources...')
+        poll_whacdamoles()
+        print('Waiting for 10 minutes before polling again...')
+        time.sleep(600)  # 10-minute delay
+
+def watch_whacdamoles():
+    api = client.CustomObjectsApi()
+    group = 'whacdamole.example.com'
+    version = 'v1'
+    plural = 'whacdemoles'
+    namespace = os.getenv('NAMESPACE', 'default')
+
+    w = watch.Watch()
+    for event in w.stream(api.list_namespaced_custom_object, group, version, namespace, plural):
+        resource = event['object']
+        event_type = event['type']
+        name = resource['metadata']['name']
+        print(f'Event {event_type} on Whacdamole {name}')
+
+        if event_type in ('ADDED', 'MODIFIED'):
+            handle_whacdamole_resource(resource)
+        elif event_type == 'DELETED':
+            delete_whacdamole_resource(resource)
+            
+def gitops(args):
+    print('Starting GitOps routine...')
+    # Load Kubernetes configuration
+    try:
+        config.load_incluster_config()
+    except config.ConfigException:
+        try:
+            config.load_kube_config()
+        except config.ConfigException:
+            print('Cannot load Kubernetes configuration.')
+            sys.exit(1)
+
+    # Start the watch routine
+    watch_thread = threading.Thread(target=watch_whacdamoles, daemon=True)
+    watch_thread.start()
+
+    # Start the polling routine
+    polling_thread = threading.Thread(target=polling_routine, daemon=True)
+    polling_thread.start()
+
+    # To keep the main thread alive while the watch and polling threads are running
+    while True:
+        time.sleep(60)
+
+def handle_whacdamole_resource(resource):
+    print(f'Handling Whacdamole resource: {resource["metadata"]["name"]}')
+    spec = resource.get('spec', {})
+
+    # Handle Helm deployments
+    helm_deployments = spec.get('helmDeployments', [])
+    for deployment in helm_deployments:
+        helm_deploy(deployment)
+
+    # Handle Kustomize deployments
+    kustomize_deployments = spec.get('kustomizeDeployments', [])
+    for deployment in kustomize_deployments:
+        kustomize_deploy(deployment)
+
+def delete_whacdamole_resource(resource):
+    print(f'Deleting resources for Whacdamole: {resource["metadata"]["name"]}')
+    # Implement deletion logic if necessary
+    # This might involve deleting Helm releases or Kustomize resources
+
+def load_whacdamole_config():
+    config_file = '.whacdamole'
+    if not os.path.exists(config_file):
+        print(f'Configuration file {config_file} not found.')
+        sys.exit(1)
+
+    with open(config_file, 'r') as f:
+        try:
+            config_data = yaml.safe_load(f)
+            return config_data
+        except yaml.YAMLError as exc:
+            print(f'Error parsing {config_file}: {exc}')
+            sys.exit(1)
+
+if __name__ == '__main__':
+    main()

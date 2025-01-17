@@ -1,0 +1,43 @@
+apiVersion: whackdamole.github.com/v1
+kind: Whacdamole
+metadata:
+  name: my-project
+spec:
+  name: MyProject
+  version: "1.0.0"
+  gitRepository: https://github.com/example/my-project.git
+  branchToWatch: main
+  localEnvironment:
+    enableLocalDockerRegistry: true
+    localDockerRegistryPort: 5000
+    fqLocalDockerRegistry: "localhost:5000"
+    kubeconfig: "/home/user/.kube/config"
+  dockerImages:
+    - name: backend
+      tags:
+        - "0.0.1"
+        - "latest"
+      registry: docker.io/myrepo
+      directory: ./services/backend
+    - name: frontend
+      tags:
+        - "0.0.1"
+        - "latest"
+      registry: docker.io/myrepo
+      directory: ./services/frontend
+  helmDeployments:
+    - gitRepository: https://github.com/example/helm-charts.git
+      branchToWatch: release
+      chartPath: charts/mychart
+      values: |
+        replicaCount: 2
+        image:
+          repository: myrepo/backend
+          tag: "0.0.1"
+      overrides:
+        environment: production
+        debug: "false"
+  kustomizeDeployments:
+    - gitRepository: https://github.com/example/kustomize-configs.git
+      branchToWatch: develop
+      kustomizePath: overlays/production

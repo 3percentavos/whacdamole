@@ -1,0 +1,156 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: whacdemoles.whackdamole.github.com
+spec:
+  group: whackdamole.github.com
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+              description: "Defines the versioned schema of this representation of an object."
+            kind:
+              type: string
+              description: "Kind is a string value representing the REST resource this object represents."
+            # Remove or adjust the metadata field
+            # metadata:
+            #   type: object
+            #   properties:
+            #     name:
+            #       type: string
+            #       description: "Name of the resource."
+            spec:
+              type: object
+              description: "Specification of the Whacdamole."
+              properties:
+                name:
+                  type: string
+                  description: "The name of the project."
+                version:
+                  type: string
+                  description: "The current version of the project."
+                gitRepository:
+                  type: string
+                  description: "URL of the Git repository hosting the project."
+                branchToWatch:
+                  type: string
+                  description: "Git branch to monitor for changes."
+                localEnvironment:
+                  type: object
+                  description: "Configuration for the local environment."
+                  properties:
+                    enableLocalDockerRegistry:
+                      type: boolean
+                      description: "Enable or disable the local Docker registry."
+                    localDockerRegistryPort:
+                      type: integer
+                      description: "Port number for the local Docker registry."
+                    fqLocalDockerRegistry:
+                      type: string
+                      description: "Fully Qualified domain name (including port) for the local Docker registry."
+                    kubeconfig:
+                      type: string
+                      description: "Path to the Kubernetes configuration file."
+                  required:
+                    - enableLocalDockerRegistry
+                    - localDockerRegistryPort
+                dockerImages:
+                  type: array
+                  description: "List of Docker image definitions for the project."
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        description: "Name of the Docker image."
+                      tags:
+                        type: array
+                        description: "List of tags for the Docker image."
+                        items:
+                          type: string
+                      registry:
+                        type: string
+                        description: "Docker registry where the image will be published."
+                      directory:
+                        type: string
+                        description: "Directory path relative to the YAML file where the Dockerfile is located."
+                    required:
+                      - name
+                      - tags
+                      - registry
+                      - directory
+                helmDeployments:
+                  type: array
+                  description: "List of Helm deployment configurations."
+                  items:
+                    type: object
+                    properties:
+                      gitRepository:
+                        type: string
+                        description: "Git repository for the Helm charts."
+                      branchToWatch:
+                        type: string
+                        description: "Git branch to monitor if different."
+                      chartPath:
+                        type: string
+                        description: "Path to the Helm chart within the repository."
+                      values:
+                        type: string
+                        description: "YAML-formatted string for Helm values."
+                      overrides:
+                        type: object
+                        description: "Key-value pairs for overriding Helm values."
+                        additionalProperties:
+                          type: string
+                    required:
+                      - gitRepository
+                      - chartPath
+                kustomizeDeployments:
+                  type: array
+                  description: "List of Kustomize deployment configurations."
+                  items:
+                    type: object
+                    properties:
+                      gitRepository:
+                        type: string
+                        description: "Git repository for Kustomize configurations."
+                      branchToWatch:
+                        type: string
+                        description: "Git branch to monitor if different."
+                      kustomizePath:
+                        type: string
+                        description: "Path to the Kustomize overlay or base."
+                    required:
+                      - gitRepository
+              required:
+                - name
+                - version
+                - gitRepository
+                - branchToWatch
+                - localEnvironment
+                - dockerImages
+            # You can include metadata with name and generateName if necessary
+            metadata:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: "Name of the resource."
+                generateName:
+                  type: string
+                  description: "GenerateName of the resource."
+          required:
+            - spec
+  scope: Namespaced
+  names:
+    plural: whacdemoles
+    singular: whacdemole
+    kind: Whacdemole
+    shortNames:
+      - whm
