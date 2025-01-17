@@ -1,5 +1,44 @@
 #!/usr/bin/env python3
 
+"""
+Whacdamole - A Kubernetes CD Operator and CLI Tool
+
+Whacdamole is a Python-based command-line interface and custom operator for
+managing the deployment  of applications in a Kubernetes environment. It
+simplifies the processes of:
+
+- Building and pushing Docker images.
+- Deploying Helm charts and Kustomize manifests.
+- Setting up and managing a local Docker registry.
+- Supporting GitOps routines for continuous deployment.
+
+This script uses a YAML configuration file (default: `.whacdamole`) to define
+project details, Docker images, and deployment configurations. 
+
+See https://github.com/3percentavos/whacdamole for more.
+
+Copyright (c) 2025 3percentavos
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+"""
+
 import argparse
 import sys
 import os
@@ -10,138 +49,214 @@ import threading
 import time
 from kubernetes import client, config, watch
 
+
 def main():
-    parser = argparse.ArgumentParser(prog='whacdamole', description='Whacdamole CLI')
-    subparsers = parser.add_subparsers(dest='command')
+    parser = argparse.ArgumentParser(prog="whacdamole", description="Whacdamole CLI")
+    parser.add_argument(
+        "--base-dir", default=os.getcwd(), help="Base directory for operations."
+    )
+    parser.add_argument(
+        "--config-file", default=".whacdamole", help="Configuration file to use."
+    )
+
+    subparsers = parser.add_subparsers(dest="command")
 
     # registry command
-    registry_parser = subparsers.add_parser('registry', help='Manage local Docker registry')
-    registry_subparsers = registry_parser.add_subparsers(dest='subcommand')
+    registry_parser = subparsers.add_parser(
+        "registry", help="Manage local Docker registry"
+    )
+    registry_subparsers = registry_parser.add_subparsers(dest="subcommand")
 
     # registry up
-    registry_up_parser = registry_subparsers.add_parser('up', help='Start the local registry')
-    registry_up_parser.add_argument('--image', default='registry:2', help='Docker image to use for the registry')
+    registry_up_parser = registry_subparsers.add_parser(
+        "up", help="Start the local registry"
+    )
+    registry_up_parser.add_argument(
+        "--image", default="registry:2", help="Docker image to use for the registry"
+    )
+
+    # registry down
+    registry_down_parser = registry_subparsers.add_parser(
+        "down", help="Stop the local registry"
+    )
 
     # build command
-    build_parser = subparsers.add_parser('build', help='Build and push Docker images')
+    build_parser = subparsers.add_parser("build", help="Build and push Docker images")
 
     # deploy command
-    deploy_parser = subparsers.add_parser('deploy', help='Deploy Helm and Kustomize configurations')
+    deploy_parser = subparsers.add_parser(
+        "deploy", help="Deploy Helm and Kustomize configurations"
+    )
 
     # gitops command
-    gitops_parser = subparsers.add_parser('gitops', help='Start GitOps routine')
+    gitops_parser = subparsers.add_parser("gitops", help="Start GitOps routine")
 
     args = parser.parse_args()
 
-    if args.command == 'registry':
-        if args.subcommand == 'up':
+    if args.command == "registry":
+        if args.subcommand == "up":
             registry_up(args)
+        elif args.subcommand == "down":
+            registry_down(args)
         else:
             registry_parser.print_help()
-    elif args.command == 'build':
+    elif args.command == "build":
         build(args)
-    elif args.command == 'deploy':
+    elif args.command == "deploy":
         deploy(args)
-    elif args.command == 'gitops':
+    elif args.command == "gitops":
         gitops(args)
     else:
         parser.print_help()
 
+
+def load_whacdamole_config(base_dir, config_file):
+    config_path = os.path.join(base_dir, config_file)
+    if not os.path.exists(config_path):
+        print(f"Configuration file {config_path} not found.")
+        sys.exit(1)
+
+    with open(config_path, "r") as f:
+        try:
+            config_data = yaml.safe_load(f)
+            return config_data
+        except yaml.YAMLError as exc:
+            print(f"Error parsing {config_path}: {exc}")
+            sys.exit(1)
+
+
 def registry_up(args):
-    print('Starting local Docker registry...')
+    print("Starting local Docker registry...")
     image = args.image
-    # Read configuration from .whacdamole
-    config_data = load_whacdamole_config()
-    port = config_data['spec']['localEnvironment']['localDockerRegistryPort']
-    container_name = 'whacdamole-registry'
+    config_data = load_whacdamole_config(args.base_dir, args.config_file)
+    port = config_data["spec"]["localEnvironment"]["localDockerRegistryPort"]
+    container_name = "whacdamole-registry"
 
     # Check if the registry is already running
-    result = subprocess.run(['docker', 'ps', '-q', '-f', f'name={container_name}'], stdout=subprocess.PIPE)
+    result = subprocess.run(
+        ["docker", "ps", "-q", "-f", f"name={container_name}"], stdout=subprocess.PIPE
+    )
     if result.stdout.strip():
-        print('Local registry is already running.')
+        print("Local registry is already running.")
         return
 
     # Start the Docker registry container
     try:
-        subprocess.run([
-            'docker', 'run', '-d',
-            '--name', container_name,
-            '-p', f'{port}:5000',
-            image
-        ], check=True)
-        print(f'Local registry started on port {port}.')
+        subprocess.run(
+            [
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                container_name,
+                "-p",
+                f"{port}:5000",
+                image,
+            ],
+            check=True,
+        )
+        print(f"Local registry started on port {port}.")
     except subprocess.CalledProcessError as e:
-        print('Failed to start local Docker registry.')
+        print("Failed to start local Docker registry.")
         sys.exit(1)
 
+
+def registry_down(args):
+    print("Stopping local Docker registry...")
+    config_data = load_whacdamole_config(args.base_dir, args.config_file)
+    container_name = "whacdamole-registry"
+
+    # Check if the registry is running
+    result = subprocess.run(
+        ["docker", "ps", "-q", "-f", f"name={container_name}"], stdout=subprocess.PIPE
+    )
+    if not result.stdout.strip():
+        print("Local registry is not running.")
+        return
+
+    # Stop and remove the Docker registry container
+    try:
+        subprocess.run(["docker", "stop", container_name], check=True)
+        subprocess.run(["docker", "rm", container_name], check=True)
+        print("Local registry stopped and removed successfully.")
+    except subprocess.CalledProcessError as e:
+        print("Failed to stop or remove local Docker registry.")
+        sys.exit(1)
+
+
 def build(args):
-    print('Building Docker images...')
-    config_data = load_whacdamole_config()
-    docker_images = config_data['spec']['dockerImages']
+    print("Building Docker images...")
+    config_data = load_whacdamole_config(args.base_dir, args.config_file)
+    docker_images = config_data["spec"]["dockerImages"]
 
     for image in docker_images:
-        name = image['name']
-        tags = image['tags']
-        registry = image['registry']
-        directory = image['directory']
+        name = image["name"]
+        tags = image["tags"]
+        registry = image["registry"]
+        directory = image["directory"]
 
         for tag in tags:
             full_image_name = f"{registry}/{name}:{tag}"
-            image_build_path = os.path.join(os.getcwd(), directory)
+            image_build_path = os.path.join(
+                args.base_dir, directory
+            )  # Updated to use base_dir
 
-            print(f'Building image {full_image_name} from {image_build_path}...')
+            print(f"Building image {full_image_name} from {image_build_path}...")
             try:
                 # Build the Docker image
-                subprocess.run([
-                    'docker', 'build',
-                    '-t', full_image_name,
-                    image_build_path
-                ], check=True)
+                subprocess.run(
+                    ["docker", "build", "-t", full_image_name, image_build_path],
+                    check=True,
+                )
 
                 # Push the image to the registry
-                subprocess.run([
-                    'docker', 'push', full_image_name
-                ], check=True)
+                subprocess.run(["docker", "push", full_image_name], check=True)
 
-                print(f'Image {full_image_name} built and pushed successfully.')
+                print(f"Image {full_image_name} built and pushed successfully.")
             except subprocess.CalledProcessError as e:
-                print(f'Failed to build or push image {full_image_name}.')
+                print(f"Failed to build or push image {full_image_name}.")
                 sys.exit(1)
 
+
 def deploy(args):
-    print('Deploying configurations...')
-    config_data = load_whacdamole_config()
+    print("Deploying configurations...")
+    config_data = load_whacdamole_config(args.base_dir, args.config_file)
 
     # Handle Helm deployments
-    helm_deployments = config_data['spec'].get('helmDeployments', [])
+    helm_deployments = config_data["spec"].get("helmDeployments", [])
     for deployment in helm_deployments:
-        helm_deploy(deployment)
+        helm_deploy(deployment, args.base_dir)
 
     # Handle Kustomize deployments
-    kustomize_deployments = config_data['spec'].get('kustomizeDeployments', [])
+    kustomize_deployments = config_data["spec"].get("kustomizeDeployments", [])
     for deployment in kustomize_deployments:
-        kustomize_deploy(deployment)
+        kustomize_deploy(deployment, args.base_dir)
 
-def helm_deploy(deployment):
-    git_repo = deployment.get('gitRepository')
-    branch = deployment.get('branchToWatch', 'main')
-    chart_path = deployment['chartPath']
-    values = deployment.get('values', '')
-    overrides = deployment.get('overrides', {})
+
+def helm_deploy(deployment, base_dir):
+    git_repo = deployment.get("gitRepository")
+    branch = deployment.get("branchToWatch", "main")
+    chart_path = deployment["chartPath"]
+    values = deployment.get("values", "")
+    overrides = deployment.get("overrides", {})
 
     # Clone the repository if necessary
     with tempfile.TemporaryDirectory() as tmpdir:
         if git_repo:
-            print(f'Cloning {git_repo}...')
-            subprocess.run(['git', 'clone', '--branch', branch, git_repo, tmpdir], check=True)
+            print(f"Cloning {git_repo}...")
+            subprocess.run(
+                ["git", "clone", "--branch", branch, git_repo, tmpdir], check=True
+            )
             chart_full_path = os.path.join(tmpdir, chart_path)
         else:
-            chart_full_path = os.path.join(os.getcwd(), chart_path)
+            chart_full_path = os.path.join(
+                base_dir, chart_path
+            )  # Updated to use base_dir
 
         # Prepare values file
         if values:
-            values_file = os.path.join(tmpdir, 'values.yaml')
-            with open(values_file, 'w') as f:
+            values_file = os.path.join(tmpdir, "values.yaml")
+            with open(values_file, "w") as f:
                 f.write(values)
         else:
             values_file = None
@@ -149,150 +264,145 @@ def helm_deploy(deployment):
         # Apply overrides
         set_overrides = []
         for key, value in overrides.items():
-            set_overrides.extend(['--set', f'{key}={value}'])
+            set_overrides.extend(["--set", f"{key}={value}"])
 
         # Deploy using Helm
         helm_cmd = [
-            'helm', 'upgrade', '--install', '--atomic',
-            deployment.get('releaseName', 'my-release'),
-            chart_full_path
+            "helm",
+            "upgrade",
+            "--install",
+            "--atomic",
+            deployment.get("releaseName", "my-release"),
+            chart_full_path,
         ]
 
         if values_file:
-            helm_cmd.extend(['-f', values_file])
+            helm_cmd.extend(["-f", values_file])
 
         helm_cmd.extend(set_overrides)
 
         try:
-            print(f'Deploying Helm chart from {chart_full_path}...')
+            print(f"Deploying Helm chart from {chart_full_path}...")
             subprocess.run(helm_cmd, check=True)
-            print('Helm deployment successful.')
+            print("Helm deployment successful.")
         except subprocess.CalledProcessError as e:
-            print('Helm deployment failed.')
+            print("Helm deployment failed.")
             sys.exit(1)
 
-def kustomize_deploy(deployment):
-    git_repo = deployment.get('gitRepository')
-    branch = deployment.get('branchToWatch', 'main')
-    kustomize_path = deployment.get('kustomizePath', '.')
+
+def kustomize_deploy(deployment, base_dir):
+    git_repo = deployment.get("gitRepository")
+    branch = deployment.get("branchToWatch", "main")
+    kustomize_path = deployment.get("kustomizePath", ".")
 
     # Clone the repository if necessary
     with tempfile.TemporaryDirectory() as tmpdir:
         if git_repo:
-            print(f'Cloning {git_repo}...')
-            subprocess.run(['git', 'clone', '--branch', branch, git_repo, tmpdir], check=True)
+            print(f"Cloning {git_repo}...")
+            subprocess.run(
+                ["git", "clone", "--branch", branch, git_repo, tmpdir], check=True
+            )
             kustomize_full_path = os.path.join(tmpdir, kustomize_path)
         else:
-            kustomize_full_path = os.path.join(os.getcwd(), kustomize_path)
+            kustomize_full_path = os.path.join(
+                base_dir, kustomize_path
+            )  # Updated to use base_dir
 
         # Apply the Kustomize manifests
         try:
-            print(f'Applying Kustomize manifests from {kustomize_full_path}...')
-            subprocess.run([
-                'kubectl', 'apply', '-k', kustomize_full_path
-            ], check=True)
-            print('Kustomize deployment successful.')
+            print(f"Applying Kustomize manifests from {kustomize_full_path}...")
+            subprocess.run(["kubectl", "apply", "-k", kustomize_full_path], check=True)
+            print("Kustomize deployment successful.")
         except subprocess.CalledProcessError as e:
-            print('Kustomize deployment failed.')
+            print("Kustomize deployment failed.")
             sys.exit(1)
+
 
 def poll_whacdamoles():
     api = client.CustomObjectsApi()
-    group = 'whacdamole.example.com'
-    version = 'v1'
-    plural = 'whacdemoles'
-    namespace = os.getenv('NAMESPACE', 'default')
+    group = "whacdamole.example.com"
+    version = "v1"
+    plural = "whacdemoles"
+    namespace = os.getenv("NAMESPACE", "default")
 
     try:
-        whacdamole_list = api.list_namespaced_custom_object(group, version, namespace, plural)
-        whacdamoles = whacdamole_list['items']
+        whacdamole_list = api.list_namespaced_custom_object(
+            group, version, namespace, plural
+        )
+        whacdamoles = whacdamole_list["items"]
         for whacdamole in whacdamoles:
             handle_whacdamole_resource(whacdamole)
     except client.exceptions.ApiException as e:
-        print(f'Error polling Whacdamole resources: {e}')
+        print(f"Error polling Whacdamole resources: {e}")
+
 
 def polling_routine():
     while True:
-        print('Polling for Whacdamole resources...')
+        print("Polling for Whacdamole resources...")
         poll_whacdamoles()
-        print('Waiting for 10 minutes before polling again...')
+        print("Waiting for 10 minutes before polling again...")
         time.sleep(600)  # 10-minute delay
+
 
 def watch_whacdamoles():
     api = client.CustomObjectsApi()
-    group = 'whacdamole.example.com'
-    version = 'v1'
-    plural = 'whacdemoles'
-    namespace = os.getenv('NAMESPACE', 'default')
+    group = "whacdamole.example.com"
+    version = "v1"
+    plural = "whacdemoles"
+    namespace = os.getenv("NAMESPACE", "default")
 
     w = watch.Watch()
-    for event in w.stream(api.list_namespaced_custom_object, group, version, namespace, plural):
-        resource = event['object']
-        event_type = event['type']
-        name = resource['metadata']['name']
-        print(f'Event {event_type} on Whacdamole {name}')
+    for event in w.stream(
+        api.list_namespaced_custom_object, group, version, namespace, plural
+    ):
+        resource = event["object"]
+        event_type = event["type"]
+        name = resource["metadata"]["name"]
+        print(f"Event {event_type} on Whacdamole {name}")
 
-        if event_type in ('ADDED', 'MODIFIED'):
+        if event_type in ("ADDED", "MODIFIED"):
             handle_whacdamole_resource(resource)
-        elif event_type == 'DELETED':
+        elif event_type == "DELETED":
             delete_whacdamole_resource(resource)
-            
+
+
 def gitops(args):
-    print('Starting GitOps routine...')
-    # Load Kubernetes configuration
+    print("Starting GitOps routine...")
     try:
         config.load_incluster_config()
     except config.ConfigException:
         try:
             config.load_kube_config()
         except config.ConfigException:
-            print('Cannot load Kubernetes configuration.')
+            print("Cannot load Kubernetes configuration.")
             sys.exit(1)
 
-    # Start the watch routine
     watch_thread = threading.Thread(target=watch_whacdamoles, daemon=True)
     watch_thread.start()
 
-    # Start the polling routine
     polling_thread = threading.Thread(target=polling_routine, daemon=True)
     polling_thread.start()
 
-    # To keep the main thread alive while the watch and polling threads are running
     while True:
         time.sleep(60)
 
+
 def handle_whacdamole_resource(resource):
     print(f'Handling Whacdamole resource: {resource["metadata"]["name"]}')
-    spec = resource.get('spec', {})
+    spec = resource.get("spec", {})
 
-    # Handle Helm deployments
-    helm_deployments = spec.get('helmDeployments', [])
+    helm_deployments = spec.get("helmDeployments", [])
     for deployment in helm_deployments:
         helm_deploy(deployment)
 
-    # Handle Kustomize deployments
-    kustomize_deployments = spec.get('kustomizeDeployments', [])
+    kustomize_deployments = spec.get("kustomizeDeployments", [])
     for deployment in kustomize_deployments:
         kustomize_deploy(deployment)
 
+
 def delete_whacdamole_resource(resource):
     print(f'Deleting resources for Whacdamole: {resource["metadata"]["name"]}')
-    # Implement deletion logic if necessary
-    # This might involve deleting Helm releases or Kustomize resources
 
-def load_whacdamole_config():
-    config_file = '.whacdamole'
-    if not os.path.exists(config_file):
-        print(f'Configuration file {config_file} not found.')
-        sys.exit(1)
 
-    with open(config_file, 'r') as f:
-        try:
-            config_data = yaml.safe_load(f)
-            return config_data
-        except yaml.YAMLError as exc:
-            print(f'Error parsing {config_file}: {exc}')
-            sys.exit(1)
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
