@@ -1,0 +1,22 @@
+apiVersion: whackdamole.github.com/v1
+kind: Whacdamole
+metadata:
+  name: whacdamole
+spec:
+  name: Whacdamole
+  version: "0.0.1"
+  gitRepository: https://github.com/3percentavos/whacdamole
+  branchToWatch: main
+  localEnvironment:
+    enableLocalDockerRegistry: true
+    localDockerRegistryPort: 5000
+    fqLocalDockerRegistry: "localhost:5000"
+  dockerImages:
+    - name: whacdamole
+      tags:
+        - "0.0.1"
+        - "latest"
+      registry: 127.0.0.1:5000
+      directory: .
+  kustomizeDeployments:
+    - kustomizePath: kustomize
