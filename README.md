@@ -113,7 +113,7 @@ spec:
     enableLocalDockerRegistry: true
     localDockerRegistryPort: 5000
     localDockerRegistries:
-      - "http://localhost:5000"
+      - "http://my-registry.local:5000"
     kubeconfig: "/home/user/.kube/config"
   dockerImages:
     - name: backend
@@ -145,6 +145,8 @@ spec:
       branchToWatch: develop
       kustomizePath: overlays/production
 ```
+
+When needing to pull an image from the local registry when deploying Kustomize manifests or Helm Charts to the the local Kubernetes cluster, point to `whacdamole.registry`.
 
 ### CLI Commands
 
