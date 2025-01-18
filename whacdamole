@@ -310,11 +310,9 @@ def k3s_up(args):
         endpoints += config_data["spec"]["localEnvironment"]["localDockerRegistries"]
 
     # Create separate lists for each registry to avoid YAML anchors and aliases
-    docker_endpoints = list(endpoints)
     self_registry_endpoints = list(endpoints)
 
     registries_data["mirrors"] = {
-        "docker.io": {"endpoint": docker_endpoints},
         "whacdamole.registry": {
             "endpoint": self_registry_endpoints,
             "rewrites": {
@@ -322,10 +320,6 @@ def k3s_up(args):
             },
         },
     }
-
-    # registries_data["configs"] = {
-    #     f"whacdamole.registry": {"tls": {"insecure_skip_verify": True}}
-    # }
 
     # Convert the dictionary to a YAML string
     yaml_str = yaml.dump(registries_data, encoding="utf-8").decode("utf-8")
