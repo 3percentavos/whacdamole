@@ -105,7 +105,7 @@ services:
     tmpfs: ["/run", "/var/run"]
     privileged: true
     environment: 
-      - K3S_URL=https://{SELF_K3S_AGENT_NAME}:6443
+      - K3S_URL=https://server:6443
       - K3S_TOKEN=secret
     hostname: {SELF_K3S_AGENT_NAME}
     networks: 
@@ -135,7 +135,7 @@ def main():
     )
     parser.add_argument(
         "--registry-image",
-        default="registry:2",
+        default="registry:2.8.3",
         help="Docker image to use for the registry.",
     )
     parser.add_argument(
@@ -316,7 +316,7 @@ def k3s_up(args):
         "whacdamole.registry": {
             "endpoint": self_registry_endpoints,
             "rewrites": {
-                "^?ns=whacdamole.registry(.*)": "",
+                "(.*)?ns=whacdamole.registry(.*)": "",
             },
         },
     }
@@ -327,8 +327,8 @@ def k3s_up(args):
     # Replace the keys with quoted versions
     yaml_str = (
         yaml_str.replace("docker.io:", '"docker.io":')
-        .replace("whackdamole.registry:", '"whackdamole.registry":')
-        .replace("^?ns=whacdamole.registry(.*)", '"^?ns=whacdamole.registry(.*)":')
+        .replace("(.*)?ns=whacdamole.registry(.*)", '"(.*)?ns=whacdamole.registry(.*)"')
+        .replace("whacdamole.registry:", '"whacdamole.registry":')
     )
 
     # Write the modified YAML string to the file
