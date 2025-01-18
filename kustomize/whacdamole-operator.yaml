@@ -17,7 +17,7 @@ spec:
       serviceAccountName: whacdamole-operator
       containers:
         - name: whacdamole
-          image: localhost:5000/whacdamole:latest
+          image: whacdamole.registry/whacdamole:0.0.1
           args: ["gitops"]
           env:
             - name: NAMESPACE

@@ -85,8 +85,6 @@ This is experimental! If you're using this as an actual CD solution, install it 
 2. **Deploy [`.whacdamole`](.whacdamole)**
 
    ```bash
-   ./whacdamole registry up
-   ./whacdamole build
    ./whacdamole deploy
    ```
 
@@ -101,7 +99,7 @@ Whacdamole relies on a `.whacdamole` YAML configuration file located in the curr
 **Example `.whacdamole` Configuration:**
 
 ```yaml
-apiVersion: whacdamole.github.com/v1
+apiVersion: whackdamole.github.com/v1beta
 kind: Whacdamole
 metadata:
   name: my-project
@@ -111,9 +109,11 @@ spec:
   gitRepository: https://github.com/example/my-project.git
   branchToWatch: main
   localEnvironment:
+    enableLocalKubernetes: true
     enableLocalDockerRegistry: true
     localDockerRegistryPort: 5000
-    fqLocalDockerRegistry: "localhost:5000"
+    localDockerRegistries:
+      - "http://localhost:5000"
     kubeconfig: "/home/user/.kube/config"
   dockerImages:
     - name: backend

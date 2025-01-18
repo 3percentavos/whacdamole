@@ -1,4 +1,4 @@
-apiVersion: whackdamole.github.com/v1
+apiVersion: whackdamole.github.com/v1beta
 kind: Whacdamole
 metadata:
   name: my-project
@@ -8,9 +8,11 @@ spec:
   gitRepository: https://github.com/example/my-project.git
   branchToWatch: main
   localEnvironment:
+    enableLocalKubernetes: true
     enableLocalDockerRegistry: true
     localDockerRegistryPort: 5000
-    fqLocalDockerRegistry: "localhost:5000"
+    localDockerRegistries:
+      - "http://my-registry.local:5000"
     kubeconfig: "/home/user/.kube/config"
   dockerImages:
     - name: backend
