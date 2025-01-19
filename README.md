@@ -8,7 +8,7 @@
 </div>
 
 
-**Whacdamole** is a single Python script that acts as a Kubernetes CD operator and CLI tool for Kubernetes app development. Whacdamole automates Docker image builds, Helm and Kustomize deployments, and implements GitOps.
+**Whacdamole** is a single Python script that acts as a Kubernetes CD operator and CLI tool for Kubernetes app development. Whacdamole automates Docker image builds, Helm and Kustomize deployments, and a quick way to verify on Kubernetes with an accessible registry.
 
 At some point I realised that I didn't want to have to build and deploy a hundred different projects to just verify a single application on Kubernetes. I decided to make this monstrosity to try and pack everything into yet-another-yaml-config that covers probably most of what you'd need to prototype an app for Kubernetes (hence Whackamole).
 
@@ -188,16 +188,6 @@ Deploys all specified Helm charts and Kustomize configurations. If there are Git
 whacdamole deploy
 ```
 
-#### `whacdamole gitops`
-
-**Description:**  
-Starts the GitOps routine, monitoring the Kubernetes cluster for `Whacdamole` resources. It deploys and periodically redeploys Helm charts and Kustomize manifests based on the custom resource definitions. This command is intended to run within the Kubernetes operator's Docker container.
-
-**Usage:**
-
-```bash
-whacdamole gitops
-```
 
 **Note:**  
 Ensure that this command is executed in an environment with access to the Kubernetes API server, typically from within a Kubernetes cluster.
@@ -205,10 +195,10 @@ Ensure that this command is executed in an environment with access to the Kubern
 ## Roadmap 🛣️
 
 - [x] Docker registry.
-- [x] Docker builds.s
+- [x] Docker builds.
 - [ ] `k3d` or another Kubernetes deployment with insecure registries.
 - [x] Helm and Kustomize deployment
-- [x] GitOps
+- [ ] GitOps.
 
 ## License 📜
 

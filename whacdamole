@@ -40,741 +40,385 @@ SOFTWARE.
 """
 
 import argparse
-import sys
 import os
-import shutil
 import subprocess
-import yaml
+import sys
 import tempfile
 import threading
 import time
-import hashlib
+import yaml
+import shutil
 from kubernetes import client, config, watch
+import hashlib
 
-
-# The prefix to use for our ephemeral containers
-def docker_prefix():
-    current_dir = os.getcwd()
-    hash_object = hashlib.sha256(current_dir.encode())
-    hex_digest = hash_object.hexdigest()
-    return "whacdamole"  # + f"-{hex_digest[:8]}"
-
-
-# Check if we're in a Docker environment. If not, bye bye.
-docker_found = None
-
-# The configuration of our kubernetes config
-SELF_K3S_SERVER_NAME = f"{docker_prefix()}-k8s-server"
-SELF_K3S_AGENT_NAME = f"{docker_prefix()}-k8s-agent"
-SELF_K3S_TEMP_DIRECTORY = os.path.join(os.getcwd(), ".whacdamoleout/k3s")
-SELF_K3S_TEMP_COMPOSE_FILE = os.path.join(
-    SELF_K3S_TEMP_DIRECTORY, "docker-compose.yaml"
-)
-SELF_K3S_TEMP_REGISTRIES = os.path.join(SELF_K3S_TEMP_DIRECTORY, "registries.yaml")
-SELF_K3S_DOCKER_COMPOSE_YAML = f"""
-version: "3.9"
-networks:
-  whacdamole-net:
-    external: true
-services:
-  server:
-    image: RANCHER_K3S_IMAGE_PLACEHOLDER
-    container_name: {SELF_K3S_SERVER_NAME}
-    restart: always
-    command: server
-    volumes: 
-      - {SELF_K3S_TEMP_DIRECTORY}:/output
-      - {SELF_K3S_TEMP_REGISTRIES}:/etc/rancher/k3s/registries.yaml
-    tmpfs: ["/run", "/var/run"] 
-    privileged: true
-    environment: 
-      - K3S_TOKEN=secret
-      - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
-      - K3S_KUBECONFIG_MODE=666
-    hostname: {SELF_K3S_SERVER_NAME}
-    ports: ["6443:6443", "443:32443", "80:32080"]
-    networks: 
-      - whacdamole-net
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-  agent:
-    image: RANCHER_K3S_IMAGE_PLACEHOLDER
-    container_name: {SELF_K3S_AGENT_NAME}
-    restart: always
-    command: agent
-    tmpfs: ["/run", "/var/run"]
-    privileged: true
-    environment: 
-      - K3S_URL=https://server:6443
-      - K3S_TOKEN=secret
-    hostname: {SELF_K3S_AGENT_NAME}
-    networks: 
-      - whacdamole-net
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-"""
-
-# Registry configuration
-SELF_REGISTRY_NAME = f"whacdamole-registry"
-
-# Retry settings
-RETRIES = 10
-RETRIES_DELAY = 5
-
-# Our self-hosted kubernetes kubeconfig, if we have one
-self_k3s_kube_config = None
-
-
-def main():
-    parser = argparse.ArgumentParser(prog="whacdamole", description="Whacdamole CLI")
-    parser.add_argument(
-        "--base-dir", default=os.getcwd(), help="Base directory for operations."
-    )
-    parser.add_argument(
-        "--config-file", default=".whacdamole", help="Configuration file to use."
-    )
-    parser.add_argument(
-        "--registry-image",
-        default="registry:2.8.3",
-        help="Docker image to use for the registry.",
-    )
-    parser.add_argument(
-        "--k3s-image",
-        default="rancher/k3s:v1.32.0-k3s1",
-        help="Docker image to use for our ephemeral Kubernetes cluster.",
-    )
-
-    subparsers = parser.add_subparsers(dest="command")
-
-    # registry command
-    registry_parser = subparsers.add_parser(
-        "registry", help="Manage local Docker registry"
-    )
-    registry_subparsers = registry_parser.add_subparsers(dest="subcommand")
-
-    # registry up
-    registry_up_parser = registry_subparsers.add_parser(
-        "up", help="Start the local registry"
-    )
-
-    # registry down
-    registry_down_parser = registry_subparsers.add_parser(
-        "down", help="Stop the local registry"
-    )
-
-    # k3s command
-    k3s_parser = subparsers.add_parser("k3s", help="Manage K3s cluster")
-    k3s_subparsers = k3s_parser.add_subparsers(dest="k3s_command")
-
-    # k3s up
-    k3s_up_parser = k3s_subparsers.add_parser("up", help="Start K3s cluster")
-
-    # k3s down
-    k3s_down_parser = k3s_subparsers.add_parser("down", help="Stop K3s cluster")
-
-    # build command
-    build_parser = subparsers.add_parser("build", help="Build and push Docker images")
-
-    # deploy command
-    deploy_parser = subparsers.add_parser(
-        "deploy",
-        help="Builds and Deploys Images, and further deploy Helm and Kustomize configurations",
-    )
-
-    # undeploy command
-    undeploy_parser = subparsers.add_parser(
-        "undeploy", help="Shuts down the Kubernetes cluster and the Registry."
-    )
-
-    # gitops command
-    gitops_parser = subparsers.add_parser("gitops", help="Start GitOps routine")
-
-    args = parser.parse_args()
-
-    if args.command == "registry":
-        if args.subcommand == "up":
-            registry_up(args)
-        elif args.subcommand == "down":
-            registry_down(args)
-        else:
-            registry_parser.print_help()
-    elif args.command == "k3s":
-        if args.k3s_command == "up":
-            k3s_up(args)
-        elif args.k3s_command == "down":
-            k3s_down(args)
-        else:
-            k3s_parser.print_help()
-    elif args.command == "build":
-        build(args)
-    elif args.command == "deploy":
-        deploy(args)
-    elif args.command == "undeploy":
-        undeploy(args)
-    elif args.command == "gitops":
-        gitops(args)
-    else:
-        parser.print_help()
-
-
-def has_docker():
-    global docker_found
-    if docker_found == None:
+class DockerHelper:
+    @staticmethod
+    def has_docker():
         try:
-            # Attempt to find the full path to the 'docker' executable
             docker_path = subprocess.check_output(
                 ["which", "docker"], text=True
             ).strip()
+            return os.path.isfile(docker_path) and os.access(docker_path, os.X_OK)
         except (subprocess.CalledProcessError, FileNotFoundError):
-            # 'which' command not found or 'docker' not in PATH
-            docker_found = False
-            return docker_found
+            return False
 
-        # Check if the found path is actually executable
-        docker_found = os.path.isfile(docker_path) and os.access(docker_path, os.X_OK)
+    @staticmethod
+    def run_docker_compose(compose_content, action: list[str]):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".yml") as f:
+            f.write(compose_content.encode("utf-8"))
+            temp_file_name = f.name
 
-    return docker_found
-
-
-def load_whacdamole_config(base_dir, config_file):
-    config_path = os.path.join(base_dir, config_file)
-    if not os.path.exists(config_path):
-        print(f"Configuration file {config_path} not found.")
-        sys.exit(1)
-
-    with open(config_path, "r") as f:
         try:
-            config_data = yaml.safe_load(f)
-            return config_data
-        except yaml.YAMLError as exc:
-            print(f"Error parsing {config_path}: {exc}")
+            subprocess.run(["docker-compose", "-f", temp_file_name] + action, check=True)
+        finally:
+            os.remove(temp_file_name)
+
+class ConfigurationManager:
+    def __init__(self, base_dir, config_file):
+        self.base_dir = base_dir
+        self.config_data = self.load_config(config_file)
+
+    def load_config(self, config_file):
+        config_path = os.path.join(self.base_dir, config_file)
+        if not os.path.exists(config_path):
+            print(f"Configuration file {config_path} not found.")
             sys.exit(1)
 
-
-def stop_docker_container(container_name):
-    print(f"Stopping local {container_name}...")
-
-    # Check if the container exists (running, stopped, or created)
-    result = subprocess.run(
-        ["docker", "ps", "-a", "-q", "-f", f"name={container_name}"],
-        stdout=subprocess.PIPE,
-    )
-    if not result.stdout.strip():
-        print(f"{container_name} does not exist.")
-        return
-
-    # Stop the container if it's running
-    try:
-        subprocess.run(["docker", "stop", container_name], check=True)
-        print(f"{container_name}  stopped successfully.")
-    except subprocess.CalledProcessError:
-        print(f"{container_name} is already stopped.")
-
-    # Remove the container (even if it's stopped)
-    try:
-        subprocess.run(["docker", "rm", container_name], check=True)
-        print(f"{container_name}  removed successfully.")
-    except subprocess.CalledProcessError:
-        print(f"Failed to remove {container_name}.")
-        sys.exit(1)
-
-
-def k3s_up(args):
-    global self_k3s_kube_config
-
-    print("Starting K3s cluster...")
-    config_data = load_whacdamole_config(args.base_dir, args.config_file)
-
-    # Create the directory
-    try:
-        os.mkdir(SELF_K3S_TEMP_DIRECTORY)
-        print(f"Directory '{SELF_K3S_TEMP_DIRECTORY}' created successfully.")
-    except FileExistsError:
-        print(f"Directory '{SELF_K3S_TEMP_DIRECTORY}' already exists.")
-    except PermissionError:
-        print(f"Permission denied: Unable to create '{SELF_K3S_TEMP_DIRECTORY}'.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-    # Save a registries yaml
-    try:
-        with open(SELF_K3S_TEMP_REGISTRIES, "r") as f:
-            registries_data = (
-                yaml.safe_load(f) or {}
-            )  # Load existing data or create an empty dict
-    except FileNotFoundError:
-        registries_data = {}  # Create an empty dictionary if file doesn't exist
-
-    endpoints = [f"http://{SELF_REGISTRY_NAME}:35000"]
-    if "localDockerRegistries" in config_data["spec"]["localEnvironment"]:
-        endpoints += config_data["spec"]["localEnvironment"]["localDockerRegistries"]
-
-    # Create separate lists for each registry to avoid YAML anchors and aliases
-    self_registry_endpoints = list(endpoints)
-
-    registries_data["mirrors"] = {
-        "whacdamole.registry": {
-            "endpoint": self_registry_endpoints,
-            "rewrites": {
-                "(.*)?ns=whacdamole.registry(.*)": "",
-            },
-        },
-    }
-
-    # Convert the dictionary to a YAML string
-    yaml_str = yaml.dump(registries_data, encoding="utf-8").decode("utf-8")
-
-    # Replace the keys with quoted versions
-    yaml_str = (
-        yaml_str.replace("docker.io:", '"docker.io":')
-        .replace("(.*)?ns=whacdamole.registry(.*)", '"(.*)?ns=whacdamole.registry(.*)"')
-        .replace("whacdamole.registry:", '"whacdamole.registry":')
-    )
-
-    # Write the modified YAML string to the file
-    with open(SELF_K3S_TEMP_REGISTRIES, "w") as f:
-        f.write(yaml_str)
-
-    # Save to a temporary docker-compose file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".yml") as f:
-        f.write(
-            SELF_K3S_DOCKER_COMPOSE_YAML.replace(
-                "RANCHER_K3S_IMAGE_PLACEHOLDER", args.k3s_image
-            ).encode("utf-8")
-        )
-        temp_file_name = f.name
-
-    try:
-        subprocess.run(["docker-compose", "-f", temp_file_name, "up", "-d"], check=True)
-        print("K3s cluster started successfully.")
-
-        # Set our Kubeconfig
-        if self_k3s_kube_config == None:
-            self_k3s_kube_config = os.path.join(
-                SELF_K3S_TEMP_DIRECTORY, "kubeconfig.yaml"
-            )
-    except subprocess.CalledProcessError:
-        print("Failed to start K3s cluster.")
-
-        # Try to cleanup
-        print("Cleaning up K3s cluster.")
-        stop_docker_container(SELF_K3S_SERVER_NAME)
-        stop_docker_container(SELF_K3S_AGENT_NAME)
-
-        sys.exit(1)
-    finally:
-        os.remove(temp_file_name)
-
-
-def k3s_down(args):
-    global self_k3s_kube_config
-
-    print("Stopping K3s cluster...")
-
-    # Save to a temporary docker-compose file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".yml") as f:
-        f.write(
-            SELF_K3S_DOCKER_COMPOSE_YAML.replace(
-                "RANCHER_K3S_IMAGE_PLACEHOLDER", args.k3s_image
-            ).encode("utf-8")
-        )
-        temp_file_name = f.name
-
-    try:
-        subprocess.run(["docker-compose", "-f", temp_file_name, "down"], check=True)
-        print("K3s cluster stopped successfully.")
-
-        subprocess.run(["docker-compose", "-f", temp_file_name, "rm"], check=True)
-        print("K3s cluster removed successfully.")
-
-        self_k3s_kube_config = None
-
-        try:
-            shutil.rmtree(SELF_K3S_TEMP_DIRECTORY)
-            print(f"Directory {SELF_K3S_TEMP_DIRECTORY} removed successfully.")
-        except OSError as e:
-            print(f"Error removing directory {SELF_K3S_TEMP_DIRECTORY}: {e}")
-
-    except subprocess.CalledProcessError:
-        print("Failed to stop K3s cluster.")
-        sys.exit(1)
-    finally:
-        os.remove(temp_file_name)
-
-
-def registry_up(args):
-    print("Starting local Docker registry...")
-    image = args.registry_image
-    config_data = load_whacdamole_config(args.base_dir, args.config_file)
-    port = config_data["spec"]["localEnvironment"]["localDockerRegistryPort"]
-
-    # Check if the registry is already running
-    result = subprocess.run(
-        ["docker", "ps", "-q", "-f", f"name={SELF_REGISTRY_NAME}"],
-        stdout=subprocess.PIPE,
-    )
-    if result.stdout.strip():
-        print("Local registry is already running.")
-        return
-
-    # Start the Docker network
-    try:
-        subprocess.run(
-            [
-                "docker",
-                "network",
-                "create",
-                "--driver",
-                "bridge",
-                "whacdamole-net",
-            ],
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print("Failed to start Docker network")
-        sys.exit(1)
-
-    # Start the Docker registry container
-    try:
-        subprocess.run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--network",
-                "whacdamole-net",
-                "--hostname",
-                SELF_REGISTRY_NAME,
-                "--name",
-                SELF_REGISTRY_NAME,
-                "-p",
-                f"{port}:5000",
-                image,
-            ],
-            check=True,
-        )
-        print(f"Local registry started on port {port}.")
-    except subprocess.CalledProcessError as e:
-        print("Failed to start local Docker registry.")
-        sys.exit(1)
-
-
-def registry_down(args):
-    print("Stopping local Docker registry...")
-
-    # Stop and remove the Docker registry container
-    stop_docker_container(SELF_REGISTRY_NAME)
-
-    # Stop the Docker network
-    try:
-        subprocess.run(
-            [
-                "docker",
-                "network",
-                "rm",
-                "whacdamole-net",
-            ],
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print("Failed to stop Docker network.")
-
-
-def build(args):
-    print("Building Docker images...")
-    config_data = load_whacdamole_config(args.base_dir, args.config_file)
-    docker_images = config_data["spec"]["dockerImages"]
-
-    if config_data["spec"]["localEnvironment"]["enableLocalDockerRegistry"] == True:
-        registry_up(args)
-
-    for image in docker_images:
-        name = image["name"]
-        tags = image["tags"]
-        registry = image["registry"]
-        directory = image["directory"]
-
-        for tag in tags:
-            full_image_name = f"{registry}/{name}:{tag}"
-            image_build_path = os.path.join(
-                args.base_dir, directory
-            )  # Updated to use base_dir
-
-            print(f"Building image {full_image_name} from {image_build_path}...")
+        with open(config_path, "r") as f:
             try:
-                # Build the Docker image
-                subprocess.run(
-                    ["docker", "build", "-t", full_image_name, image_build_path],
-                    check=True,
-                )
-
-                # Push the image to the registry
-                subprocess.run(["docker", "push", full_image_name], check=True)
-
-                print(f"Image {full_image_name} built and pushed successfully.")
-            except subprocess.CalledProcessError as e:
-                print(f"Failed to build or push image {full_image_name}.")
-
-                if (
-                    config_data["spec"]["localEnvironment"]["enableLocalDockerRegistry"]
-                    == True
-                ):
-                    registry_down(args)
-
+                return yaml.safe_load(f)
+            except yaml.YAMLError as exc:
+                print(f"Error parsing {config_path}: {exc}")
                 sys.exit(1)
 
+class NetworkManager:
+    NETWORK_NAME = 'whacdamole-net'
 
-def deploy(args):
-    global self_k3s_kube_config
-
-    print("Deploying configurations...")
-    config_data = load_whacdamole_config(args.base_dir, args.config_file)
-
-    # Build our dependencies first
-    if has_docker():
-        build(args)
-
-    # Spin up our own K3s deployment if specified, and if we've got Docker access
-    if (
-        config_data["spec"]["localEnvironment"]["enableLocalKubernetes"] == True
-        and has_docker()
-    ):
-        k3s_up(args)
-
-    # Get our preferred kubeconfig,
-    kube_config = None
-    if self_k3s_kube_config is not None:
-        kube_config = self_k3s_kube_config
-    if "kubeconfig" in config_data["spec"]["localEnvironment"]:
-        kube_config = config_data["spec"]["localEnvironment"]["kubeconfig"]
-
-    # Handle Helm deployments
-    helm_deployments = config_data["spec"].get("helmDeployments", [])
-    for deployment in helm_deployments:
-        helm_deploy(deployment, args.base_dir, kube_config)
-
-    # Handle Kustomize deployments
-    kustomize_deployments = config_data["spec"].get("kustomizeDeployments", [])
-    for deployment in kustomize_deployments:
-        kustomize_deploy(deployment, args.base_dir, kube_config)
-
-
-def undeploy(args):
-    global self_k3s_kube_config
-
-    config_data = load_whacdamole_config(args.base_dir, args.config_file)
-
-    # Spin down our own K3s deployment if specified, and if we've got Docker access
-    if (
-        config_data["spec"]["localEnvironment"]["enableLocalKubernetes"] == True
-        and has_docker()
-    ):
-        k3s_down(args)
-
-    # Spin down our registry
-    if has_docker():
-        registry_down(args)
-
-
-def helm_deploy(deployment, base_dir, kube_config=None):
-    git_repo = deployment.get("gitRepository")
-    branch = deployment.get("branchToWatch", "main")
-    chart_path = deployment["chartPath"]
-    values = deployment.get("values", "")
-    overrides = deployment.get("overrides", {})
-
-    # Clone the repository if necessary
-    with tempfile.TemporaryDirectory() as tmpdir:
-        if git_repo:
-            print(f"Cloning {git_repo}...")
-            subprocess.run(
-                ["git", "clone", "--branch", branch, git_repo, tmpdir], check=True
-            )
-            chart_full_path = os.path.join(tmpdir, chart_path)
-        else:
-            chart_full_path = os.path.join(
-                base_dir, chart_path
-            )  # Updated to use base_dir
-
-        # Prepare the environment
-        cmd_env = os.environ.copy()
-        if kube_config is not None:
-            cmd_env["KUBECONFIG"] = kube_config
-
-        # Prepare values file
-        if values:
-            values_file = os.path.join(tmpdir, "values.yaml")
-            with open(values_file, "w") as f:
-                f.write(values)
-        else:
-            values_file = None
-
-        # Apply overrides
-        set_overrides = []
-        for key, value in overrides.items():
-            set_overrides.extend(["--set", f"{key}={value}"])
-
-        # Deploy using Helm
-        helm_cmd = [
-            "helm",
-            "upgrade",
-            "--install",
-            "--atomic",
-            deployment.get("releaseName", "my-release"),
-            chart_full_path,
-        ]
-
-        if values_file:
-            helm_cmd.extend(["-f", values_file])
-
-        helm_cmd.extend(set_overrides)
-
-        for attempt in range(RETRIES):
-            try:
-                print(f"Deploying Helm chart from {chart_full_path}...")
-                subprocess.run(helm_cmd, env=cmd_env, check=True)
-                print("Helm deployment successful.")
-                break
-            except Exception as e:
-                # Your code here
-                print(f"Attempt {attempt + 1} failed.")
-                time.sleep(RETRIES_DELAY)
-
-                # If the code fails, continue to the next attempt
-                if attempt == RETRIES - 1:
-                    print("All retries failed")
-                    sys.exit(1)
-
-
-def kustomize_deploy(deployment, base_dir, kube_config=None):
-    git_repo = deployment.get("gitRepository")
-    branch = deployment.get("branchToWatch", "main")
-    kustomize_path = deployment.get("kustomizePath", ".")
-
-    # Clone the repository if necessary
-    with tempfile.TemporaryDirectory() as tmpdir:
-        if git_repo:
-            print(f"Cloning {git_repo}...")
-            subprocess.run(
-                ["git", "clone", "--branch", branch, git_repo, tmpdir], check=True
-            )
-            kustomize_full_path = os.path.join(tmpdir, kustomize_path)
-        else:
-            kustomize_full_path = os.path.join(
-                base_dir, kustomize_path
-            )  # Updated to use base_dir
-
-        # Prepare the environment
-        cmd_env = os.environ.copy()
-        if kube_config is not None:
-            cmd_env["KUBECONFIG"] = kube_config
-
-        for attempt in range(RETRIES):
-            try:
-                print(f"Applying Kustomize manifests from {kustomize_full_path}...")
-                subprocess.run(
-                    ["kubectl", "apply", "-k", kustomize_full_path],
-                    env=cmd_env,
-                    check=True,
-                )
-                print("Kustomize deployment successful.")
-                break
-            except Exception as e:
-                # Your code here
-                print(f"Attempt {attempt + 1} failed.")
-                time.sleep(RETRIES_DELAY)
-
-                # If the code fails, continue to the next attempt
-                if attempt == RETRIES - 1:
-                    print("All retries failed")
-                    sys.exit(1)
-
-
-def poll_whacdamoles():
-    api = client.CustomObjectsApi()
-    group = "whacdamole.example.com"
-    version = "v1beta"
-    plural = "whacdemoles"
-    namespace = os.getenv("NAMESPACE", "default")
-
-    try:
-        whacdamole_list = api.list_namespaced_custom_object(
-            group, version, namespace, plural
-        )
-        whacdamoles = whacdamole_list["items"]
-        for whacdamole in whacdamoles:
-            handle_whacdamole_resource(whacdamole)
-    except client.exceptions.ApiException as e:
-        print(f"Error polling Whacdamole resources: {e}")
-
-
-def polling_routine():
-    while True:
-        print("Polling for Whacdamole resources...")
-        poll_whacdamoles()
-        print("Waiting for 10 minutes before polling again...")
-        time.sleep(600)  # 10-minute delay
-
-
-def watch_whacdamoles():
-    api = client.CustomObjectsApi()
-    group = "whacdamole.example.com"
-    version = "v1beta"
-    plural = "whacdemoles"
-    namespace = os.getenv("NAMESPACE", "default")
-
-    w = watch.Watch()
-    for event in w.stream(
-        api.list_namespaced_custom_object, group, version, namespace, plural
-    ):
-        resource = event["object"]
-        event_type = event["type"]
-        name = resource["metadata"]["name"]
-        print(f"Event {event_type} on Whacdamole {name}")
-
-        if event_type in ("ADDED", "MODIFIED"):
-            handle_whacdamole_resource(resource)
-        elif event_type == "DELETED":
-            delete_whacdamole_resource(resource)
-
-
-def gitops(args):
-    print("Starting GitOps routine...")
-    try:
-        config.load_incluster_config()
-    except config.ConfigException:
+    @staticmethod
+    def setup_network():
+        print(f"Setting up network: {NetworkManager.NETWORK_NAME}")
         try:
-            config.load_kube_config()
-        except config.ConfigException:
-            print("Cannot load Kubernetes configuration.")
-            sys.exit(1)
+            subprocess.run(
+                ["docker", "network", "create", "--driver", "bridge", NetworkManager.NETWORK_NAME],
+                check=True,
+            )
+            print("Network setup successfully.")
+        except subprocess.CalledProcessError:
+            print("Network already exists or could not be created.")
 
-    watch_thread = threading.Thread(target=watch_whacdamoles, daemon=True)
-    watch_thread.start()
+    @staticmethod
+    def teardown_network():
+        print(f"Tearing down network: {NetworkManager.NETWORK_NAME}")
+        try:
+            subprocess.run(["docker", "network", "rm", NetworkManager.NETWORK_NAME], check=True)
+            print("Network teardown successful.")
+        except subprocess.CalledProcessError:
+            print("Failed to stop Docker network.")
 
-    polling_thread = threading.Thread(target=polling_routine, daemon=True)
-    polling_thread.start()
+class RegistryManager:
+    def __init__(self, config_manager):
+        self.config_manager = config_manager
+        self.container_name = "whacdamole-registry"
+        self.registry_image = self.config_manager.config_data['spec'].get('registryImage', 'registry:2.8.3')
+        self.port = self.config_manager.config_data["spec"]["localEnvironment"]["localDockerRegistryPort"]
 
-    while True:
-        time.sleep(60)
+    def start_registry(self):
+        print("Starting local Docker registry...")
+        if self.is_registry_running():
+            print("Local registry is already running.")
+            return
+        NetworkManager.setup_network()
+        DockerHelper.run_docker_compose(self.compose_content(), ["up", "-d"])
+
+    def stop_registry(self):
+        print("Stopping local Docker registry...")
+        DockerHelper.run_docker_compose(self.compose_content(), ["down"])
+
+    def is_registry_running(self):
+        result = subprocess.run(["docker", "ps", "-q", "-f", f"name={self.container_name}"], stdout=subprocess.PIPE)
+        return bool(result.stdout.strip())
+
+    def compose_content(self):
+        return f"""
+        version: "3"
+        services:
+          registry:
+            container_name: {self.container_name}
+            image: {self.registry_image}
+            ports:
+              - {self.port}:5000
+            networks:
+              - {NetworkManager.NETWORK_NAME}
+        networks:
+          {NetworkManager.NETWORK_NAME}:
+            external: true
+        """
+
+class KubernetesManager:
+    def __init__(self, config_manager):
+        self.config_manager = config_manager
+        self.directory = os.path.join(os.getcwd(), ".whacdamoleout/k3s")
+        self.server_name = "whacdamole-k8s-server"
+        self.agent_name = "whacdamole-k8s-agent"
+        self.kube_config = None
+
+    def start_k3s(self):
+        print("Starting K3s cluster...")
+        os.makedirs(self.directory, exist_ok=True)
+        self.create_registries_file()
+        try:
+            DockerHelper.run_docker_compose(self.k3s_compose_content(), ["up", "-d"])
+            self.kube_config = os.path.join(self.directory, "kubeconfig.yaml")
+            print("K3s cluster started successfully.")
+        except subprocess.CalledProcessError:
+            print("Failed to start K3s cluster.")
+            self.stop_k3s()
+            raise subprocess.CalledProcessError
+
+    def stop_k3s(self):
+        print("Stopping K3s cluster...")
+        try:
+            DockerHelper.run_docker_compose(self.k3s_compose_content(), ["down"])
+            self.kube_config = None
+            print("K3s cluster stopped successfully.")
+        except subprocess.CalledProcessError:
+            print("Failed to stop K3s cluster.")
+            raise subprocess.CalledProcessError
+        
+        try:
+            shutil.rmtree(self.directory)
+        except:
+            print("Kubernetes likely already deleted.")
+
+    def create_registries_file(self):
+        registries_path = os.path.join(self.directory, "registries.yaml")
+
+        endpoints = [f"http://whacdamole-registry:5000"]
+        local_registries = self.config_manager.config_data["spec"]["localEnvironment"].get("localDockerRegistries", [])
+        endpoints.extend(local_registries)
+
+        registries_data = {
+            "mirrors": {
+                "whacdamole.registry": {
+                    "endpoint": endpoints,
+                    "rewrites": {
+                        "(.*)?ns=whacdamole.registry(.*)": ""
+                    }
+                }
+            }
+        }
+
+        yaml_str = yaml.dump(registries_data)
+        # Fix keys by quoting them for YAML compatibility
+        yaml_str = (
+            yaml_str.replace("docker.io:", '"docker.io":')
+            .replace("(.*)?ns=whacdamole.registry(.*)", '"(.*)?ns=whacdamole.registry(.*)"')
+            .replace("whacdamole.registry:", '"whacdamole.registry":')
+        )
+
+        with open(registries_path, "w") as f:
+            f.write(yaml_str)
+
+    def k3s_compose_content(self):
+        return f"""
+        version: "3.9"
+        networks:
+          whacdamole-net:
+            external: true
+        services:
+          server:
+            image: {self.config_manager.config_data['spec'].get('k3sImage', 'rancher/k3s:v1.32.0-k3s1')}
+            container_name: {self.server_name}
+            restart: always
+            command: server
+            volumes:
+              - {self.directory}:/output
+              - {self.directory}/registries.yaml:/etc/rancher/k3s/registries.yaml
+            tmpfs: ["/run", "/var/run"]
+            privileged: true
+            environment:
+              - K3S_TOKEN=secret
+              - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
+              - K3S_KUBECONFIG_MODE=666
+            hostname: {self.server_name}
+            ports: ["6443:6443", "443:32443", "80:32080"]
+            networks: 
+              - whacdamole-net
+            extra_hosts:
+              - "host.docker.internal:host-gateway"
+          agent:
+            image: {self.config_manager.config_data['spec'].get('k3sImage', 'rancher/k3s:v1.32.0-k3s1')}
+            container_name: {self.agent_name}
+            restart: always
+            command: agent
+            tmpfs: ["/run", "/var/run"]
+            privileged: true
+            environment:
+              - K3S_URL=https://server:6443
+              - K3S_TOKEN=secret
+            hostname: {self.agent_name}
+            networks: 
+              - whacdamole-net
+            extra_hosts:
+              - "host.docker.internal:host-gateway"
+        """
 
 
-def handle_whacdamole_resource(resource, kube_config=None):
-    print(f'Handling Whacdamole resource: {resource["metadata"]["name"]}')
-    spec = resource.get("spec", {})
+class Whacdamole:
+    def __init__(self):
+        self.args = self.parse_args()
+        self.config_manager = ConfigurationManager(self.args.base_dir, self.args.config_file)
+        self.registry_manager = RegistryManager(self.config_manager)
+        self.kubernetes_manager = KubernetesManager(self.config_manager)
 
-    helm_deployments = spec.get("helmDeployments", [])
-    for deployment in helm_deployments:
-        helm_deploy(deployment, kube_config)
+    def parse_args(self):
+        parser = argparse.ArgumentParser(prog="whacdamole", description="Whacdamole CLI")
+        parser.add_argument("--base-dir", default=os.getcwd(), help="Base directory for operations.")
+        parser.add_argument("--config-file", default=".whacdamole", help="Configuration file to use.")
+        subparsers = parser.add_subparsers(dest="command")
 
-    kustomize_deployments = spec.get("kustomizeDeployments", [])
-    for deployment in kustomize_deployments:
-        kustomize_deploy(deployment, kube_config)
+        self.add_subparser_commands(subparsers)
 
+        return parser.parse_args()
 
-def delete_whacdamole_resource(resource):
-    print(f'Deleting resources for Whacdamole: {resource["metadata"]["name"]}')
+    def add_subparser_commands(self, subparsers):
+        registry_parser = subparsers.add_parser("registry", help="Manage local Docker registry")
+        registry_subparsers = registry_parser.add_subparsers(dest="subcommand")
+        registry_up_parser = registry_subparsers.add_parser("up", help="Start the local registry")
+        registry_down_parser = registry_subparsers.add_parser("down", help="Stop the local registry")
+
+        k3s_parser = subparsers.add_parser("k3s", help="Manage K3s cluster")
+        k3s_subparsers = k3s_parser.add_subparsers(dest="k3s_command")
+        k3s_up_parser = k3s_subparsers.add_parser("up", help="Start K3s cluster")
+        k3s_down_parser = k3s_subparsers.add_parser("down", help="Stop K3s cluster")
+
+        build_parser = subparsers.add_parser("build", help="Build and push Docker images")
+        deploy_parser = subparsers.add_parser("deploy", help="Deploy configurations")
+        undeploy_parser = subparsers.add_parser("undeploy", help="Stop Kubernetes and Registry")
+
+    def run(self):
+        if self.args.command == "registry":
+            if self.args.subcommand == "up":
+                self.registry_manager.start_registry()
+            elif self.args.subcommand == "down":
+                self.registry_manager.stop_registry()
+
+        elif self.args.command == "k3s":
+            if self.args.k3s_command == "up":
+                self.kubernetes_manager.start_k3s()
+            elif self.args.k3s_command == "down":
+                self.kubernetes_manager.stop_k3s()
+
+        elif self.args.command == "build":
+            self.build()
+        elif self.args.command == "deploy":
+            self.deploy()
+        elif self.args.command == "undeploy":
+            self.undeploy()
+
+    def build(self):
+        if self.config_manager.config_data["spec"]["localEnvironment"]["enableLocalDockerRegistry"]:
+            self.registry_manager.start_registry()
+
+        docker_images = self.config_manager.config_data["spec"]["dockerImages"]
+        for image in docker_images:
+            name = image["name"]
+            tags = image["tags"]
+            registry = image["registry"]
+            directory = image["directory"]
+
+            for tag in tags:
+                full_image_name = f"{registry}/{name}:{tag}"
+                image_build_path = os.path.join(self.args.base_dir, directory)
+                print(f"Building image {full_image_name} from {image_build_path}...")
+                try:
+                    subprocess.run(["docker", "build", "-t", full_image_name, image_build_path], check=True)
+                    subprocess.run(["docker", "push", full_image_name], check=True)
+                    print(f"Image {full_image_name} built and pushed successfully.")
+                except subprocess.CalledProcessError:
+                    print(f"Failed to build or push image {full_image_name}.")
+                    sys.exit(1)
+
+    def deploy(self):
+        if DockerHelper.has_docker():
+            self.build()
+
+        if self.config_manager.config_data["spec"]["localEnvironment"]["enableLocalKubernetes"]:
+            self.kubernetes_manager.start_k3s()
+
+        kube_config = self.kubernetes_manager.kube_config or self.config_manager.config_data["spec"].get(
+            "localEnvironment", {}).get("kubeconfig")
+
+        self.deploy_helm(kube_config)
+        self.deploy_kustomize(kube_config)
+
+    def deploy_helm(self, kube_config):
+        helm_deployments = self.config_manager.config_data["spec"].get("helmDeployments", [])
+        for deployment in helm_deployments:
+            self.helm_deploy(deployment, kube_config)
+
+    def helm_deploy(self, deployment, kube_config):
+        git_repo = deployment.get("gitRepository")
+        chart_path = deployment["chartPath"]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            if git_repo:
+                subprocess.run(["git", "clone", git_repo, tmpdir], check=True)
+                chart_full_path = os.path.join(tmpdir, chart_path)
+            else:
+                chart_full_path = os.path.join(self.args.base_dir, chart_path)
+
+            cmd_env = os.environ.copy()
+            if kube_config:
+                cmd_env["KUBECONFIG"] = kube_config
+
+            helm_cmd = [
+                "helm", "upgrade", "--install", "--atomic",
+                deployment.get("releaseName", "my-release"), chart_full_path
+            ]
+
+            for attempt in range(10):
+                try:
+                    subprocess.run(helm_cmd, env=cmd_env, check=True)
+                    break
+                except Exception:
+                    time.sleep(5)
+                    if attempt == 9:
+                        sys.exit(1)
+
+    def deploy_kustomize(self, kube_config):
+        kustomize_deployments = self.config_manager.config_data["spec"].get("kustomizeDeployments", [])
+        for deployment in kustomize_deployments:
+            self.kustomize_deploy(deployment, kube_config)
+
+    def kustomize_deploy(self, deployment, kube_config):
+        git_repo = deployment.get("gitRepository")
+        kustomize_path = deployment.get("kustomizePath", ".")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            if git_repo:
+                subprocess.run(["git", "clone", git_repo, tmpdir], check=True)
+                kustomize_full_path = os.path.join(tmpdir, kustomize_path)
+            else:
+                kustomize_full_path = os.path.join(self.args.base_dir, kustomize_path)
+
+            cmd_env = os.environ.copy()
+            if kube_config:
+                cmd_env["KUBECONFIG"] = kube_config
+
+            for attempt in range(10):
+                try:
+                    subprocess.run(["kubectl", "apply", "-k", kustomize_full_path], env=cmd_env, check=True)
+                    break
+                except Exception:
+                    time.sleep(5)
+                    if attempt == 9:
+                        sys.exit(1)
+
+    def undeploy(self):
+        if DockerHelper.has_docker():
+            self.registry_manager.stop_registry()
+        self.kubernetes_manager.stop_k3s()
 
 
 if __name__ == "__main__":
-    main()
+    whacdamole = Whacdamole()
+    whacdamole.run()
