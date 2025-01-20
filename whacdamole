@@ -71,7 +71,7 @@ class DockerHelper:
 
         try:
             subprocess.run(
-                ["docker-compose", "-f", temp_file_name] + action, check=True
+                ["docker", "compose", "-f", temp_file_name] + action, check=True
             )
         finally:
             os.remove(temp_file_name)
@@ -162,7 +162,6 @@ class RegistryManager:
 
     def compose_content(self):
         return f"""
-        version: "3"
         services:
           registry:
             container_name: {self.container_name}
@@ -247,7 +246,6 @@ class KubernetesManager:
 
     def k3s_compose_content(self):
         return f"""
-        version: "3.9"
         networks:
           whacdamole-net:
             external: true
@@ -259,6 +257,7 @@ class KubernetesManager:
             command:
               - server  
               - --disable-cloud-controller
+              - --snapshotter=fuse-overlayfs
               - --debug
               - -d
               - /var/lib/rancher/k3s
@@ -283,9 +282,12 @@ class KubernetesManager:
             restart: always
             command: 
               - agent  
+              - --snapshotter=fuse-overlayfs
               - --debug
               - -d
               - /var/lib/rancher/k3s
+            volumes:
+              - {self.directory}/registries.yaml:/etc/rancher/k3s/registries.yaml
             tmpfs: ["/run", "/var/run"]
             privileged: true
             environment:
