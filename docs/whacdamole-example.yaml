@@ -9,6 +9,7 @@ spec:
   branchToWatch: main
   localEnvironment:
     enableLocalKubernetes: true
+    enableLocalKubernetesTraefik: true
     enableLocalDockerRegistry: true
     localDockerRegistryPort: 5000
     localDockerRegistries:

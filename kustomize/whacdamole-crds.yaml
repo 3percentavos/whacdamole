@@ -54,6 +54,9 @@ spec:
                     enableLocalKubernetes:
                       type: boolean
                       description: "Enable or disable a local Kubernetes configuration."
+                    enableLocalKubernetesTraefik:
+                      type: boolean
+                      description: "Enable or disable a local Kubernetes' Traefik configuration."
                     enableLocalDockerRegistry:
                       type: boolean
                       description: "Enable or disable the local Docker registry."

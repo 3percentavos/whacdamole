@@ -61,11 +61,15 @@ class StringableYAML(ruamel.yaml.YAML):
         ruamel.yaml.YAML.dump(self, data, stream, **kw)
         if inefficient:
             return stream.getvalue()
+        
+    @staticmethod
+    def get_instance():
+        yaml = StringableYAML()
+        yaml.preserve_quotes = True
+        yaml.explicit_start = True
 
-global yaml
-yaml = StringableYAML()
-yaml.preserve_quotes = True
-yaml.explicit_start = True
+        return yaml
+
 
 class DockerHelper:
     @staticmethod
@@ -105,7 +109,7 @@ class ConfigurationManager:
 
         with open(config_path, "r") as f:
             try:
-                return yaml.load(f)
+                return StringableYAML.get_instance().load(f)
             except AttributeError as exc:
                 print(f"Error parsing {config_path}: {exc}")
                 sys.exit(1)
@@ -198,6 +202,9 @@ class KubernetesManager:
         self.directory = os.path.join(os.getcwd(), ".whacdamoleout/k3s")
         self.server_name = "whacdamole-k8s-server"
         self.agent_name = "whacdamole-k8s-agent"
+        self.traefik_enabled = (
+            self.config_manager.config_data['spec']['localEnvironment']
+            .get('enableLocalKubernetesTraefik', True))
         self.kube_config = None
 
     def start_k3s(self):
@@ -247,7 +254,7 @@ class KubernetesManager:
             "rewrites": {"(.*)?ns=whacdamole.registry(.*)": ""},
         }
 
-        yaml_str = yaml.dump(registries_data)
+        yaml_str = StringableYAML.get_instance().dump(registries_data)
         
         # Fix keys by quoting them for YAML compatibility
         yaml_str = (
@@ -278,6 +285,7 @@ class KubernetesManager:
               - --debug
               - -d
               - /var/lib/rancher/k3s
+              {f"- --disable=traefik" if not self.traefik_enabled else ""}
             volumes:
               - {self.directory}:/output
               - {self.directory}/registries.yaml:/etc/rancher/k3s/registries.yaml
@@ -303,6 +311,7 @@ class KubernetesManager:
               - --debug
               - -d
               - /var/lib/rancher/k3s
+              {f"- --disable=traefik" if not self.traefik_enabled else ""}
             volumes:
               - {self.directory}/registries.yaml:/etc/rancher/k3s/registries.yaml
             tmpfs: ["/run", "/var/run"]
