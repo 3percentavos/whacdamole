@@ -13,7 +13,22 @@ spec:
     localDockerRegistryPort: 5000
     localDockerRegistries:
       - "http://my-registry.local:5000"
-    localDockerRegistriesFile: {}
+    localDockerRegistriesFile:
+      configs:
+        "registry.example.com:5000":
+          auth:
+            username: xxxxxx
+            password: xxxxxx
+          tls:
+            cert_file: # path to the cert file used in the registry
+            key_file:  # path to the key file used in the registry
+            ca_file:   # path to the ca file used in the registry
+      mirrors:
+        registry.example.com:
+          endpoint:
+            - "https://registry.example.com:5000"
+          rewrites:
+            "^rancher/(.*)": "mirrorproject/rancher-images/$1"
     kubeconfig: "/home/user/.kube/config"
   dockerImages:
     - name: backend

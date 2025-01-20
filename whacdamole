@@ -44,13 +44,28 @@ import os
 import subprocess
 import sys
 import tempfile
-import threading
 import time
-import yaml
+import ruamel.yaml
 import shutil
-from kubernetes import client, config, watch
-import hashlib
 
+from io import StringIO
+from kubernetes import client, config, watch
+
+
+class StringableYAML(ruamel.yaml.YAML):
+    def dump(self, data, stream=None, **kw):
+        inefficient = False
+        if stream is None:
+            inefficient = True
+            stream = StringIO()
+        ruamel.yaml.YAML.dump(self, data, stream, **kw)
+        if inefficient:
+            return stream.getvalue()
+
+global yaml
+yaml = StringableYAML()
+yaml.preserve_quotes = True
+yaml.explicit_start = True
 
 class DockerHelper:
     @staticmethod
@@ -90,8 +105,8 @@ class ConfigurationManager:
 
         with open(config_path, "r") as f:
             try:
-                return yaml.safe_load(f)
-            except yaml.YAMLError as exc:
+                return yaml.load(f)
+            except AttributeError as exc:
                 print(f"Error parsing {config_path}: {exc}")
                 sys.exit(1)
 
@@ -233,6 +248,7 @@ class KubernetesManager:
         }
 
         yaml_str = yaml.dump(registries_data)
+        
         # Fix keys by quoting them for YAML compatibility
         yaml_str = (
             yaml_str.replace("docker.io:", '"docker.io":')
@@ -438,22 +454,11 @@ class Whacdamole:
                 subprocess.run(["git", "clone", git_repo, tmpdir], check=True)
                 chart_full_path = os.path.join(tmpdir, release_path)
             else:
-                chart_full_path = os.path.join(self.args.base_dir, release_path)
+                chart_full_path = release_path
 
             cmd_env = os.environ.copy()
             if kube_config:
                 cmd_env["KUBECONFIG"] = kube_config
-
-            helm_cmd = [
-                "helm",
-                "upgrade",
-                "--install",
-                "-n",
-                namespace,
-                "--atomic",
-                release,
-                chart_full_path,
-            ]
 
             if helm_repo:
                 for attempt in range(10):
@@ -472,6 +477,17 @@ class Whacdamole:
                         if attempt == 9:
                             sys.exit(1)
 
+            helm_cmd = [
+                "helm",
+                "upgrade",
+                "--install",
+                "-n",
+                namespace,
+                "--atomic",
+                release,
+                chart_full_path,
+            ]
+            
             for attempt in range(10):
                 try:
                     subprocess.run(helm_cmd, env=cmd_env, check=True)

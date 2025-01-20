@@ -20,7 +20,10 @@ Before using Whacdamole, ensure you have the following installed:
     - **Helm**: Installed for deploying Helm charts.
     - **Kubectl**: Installed for interacting with Kubernetes.
 - **Docker**: Installed and configured for building images.
-- **Python 3.12+**: Required if running the CLI tool from source.
+- **Python 3.12+**: Required if running the CLI tool from source. The following packages are used.
+    - `pyyaml==6.0.2`
+    - `ruamel.yaml==0.17.21`
+    - `kubernetes==31.0.0`
 - **Git**: For cloning repositories.
 
 ## Installation 🏗️
