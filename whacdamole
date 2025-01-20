@@ -481,6 +481,7 @@ class Whacdamole:
                 "helm",
                 "upgrade",
                 "--install",
+                "--create-namespace",
                 "-n",
                 namespace,
                 "--atomic",
