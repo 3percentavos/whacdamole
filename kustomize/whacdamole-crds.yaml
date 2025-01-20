@@ -111,7 +111,16 @@ spec:
                       branchToWatch:
                         type: string
                         description: "Git branch to monitor if different."
-                      chartPath:
+                      helmRepo:
+                        type: string
+                        description: "Name the Helm repo."
+                      helmRepoPath:
+                        type: string
+                        description: "Path to the Helm Repo for this chart."
+                      release:
+                        type: string
+                        description: "Name the chart."
+                      releasePath:
                         type: string
                         description: "Path to the Helm chart within the repository."
                       values:

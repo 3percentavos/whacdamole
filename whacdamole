@@ -151,6 +151,7 @@ class RegistryManager:
 
     def stop_registry(self):
         print("Stopping local Docker registry...")
+        NetworkManager.teardown_network()
         DockerHelper.run_docker_compose(self.compose_content(), ["down"])
 
     def is_registry_running(self):
@@ -427,13 +428,16 @@ class Whacdamole:
 
     def helm_deploy(self, deployment, kube_config):
         git_repo = deployment.get("gitRepository")
-        chart_path = deployment["chartPath"]
+        helm_repo = deployment.get("helmRepository")
+        helm_repo_path = deployment.get("helmRepositoryPath")
+        release = deployment.get("release", "my-release")
+        release_path = deployment["releasePath"]
         with tempfile.TemporaryDirectory() as tmpdir:
             if git_repo:
                 subprocess.run(["git", "clone", git_repo, tmpdir], check=True)
-                chart_full_path = os.path.join(tmpdir, chart_path)
+                chart_full_path = os.path.join(tmpdir, release_path)
             else:
-                chart_full_path = os.path.join(self.args.base_dir, chart_path)
+                chart_full_path = os.path.join(self.args.base_dir, release_path)
 
             cmd_env = os.environ.copy()
             if kube_config:
@@ -444,9 +448,26 @@ class Whacdamole:
                 "upgrade",
                 "--install",
                 "--atomic",
-                deployment.get("releaseName", "my-release"),
+                release,
                 chart_full_path,
             ]
+
+            if helm_repo:
+                for attempt in range(10):
+                    try:
+                        subprocess.run(
+                            ["helm", "repo", "add", helm_repo, helm_repo_path],
+                            env=cmd_env,
+                            check=True,
+                        )
+                        subprocess.run(
+                            ["helm", "repo", "update"], env=cmd_env, check=True
+                        )
+                        break
+                    except Exception:
+                        time.sleep(5)
+                        if attempt == 9:
+                            sys.exit(1)
 
             for attempt in range(10):
                 try:
