@@ -65,6 +65,9 @@ spec:
                       description: "Fully Qualified domain names (including port) for local Docker registries."
                       items:
                         type: string
+                    localDockerRegistriesFile:
+                      type: object
+                      description: "Raw YAML describing the  `registries.yaml` file you need."
                     kubeconfig:
                       type: string
                       description: "Path to the Kubernetes configuration file."

@@ -12,6 +12,7 @@ spec:
     enableLocalDockerRegistry: true
     localDockerRegistryPort: 35000
     localDockerRegistries: []
+    localDockerRegistriesFile: {}
   dockerImages:
     - name: whacdamole
       tags:

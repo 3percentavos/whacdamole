@@ -222,13 +222,14 @@ class KubernetesManager:
         ].get("localDockerRegistries", [])
         endpoints.extend(local_registries)
 
-        registries_data = {
-            "mirrors": {
-                "whacdamole.registry": {
-                    "endpoint": endpoints,
-                    "rewrites": {"(.*)?ns=whacdamole.registry(.*)": ""},
-                }
-            }
+        registries_data = self.config_manager.config_data["spec"][
+            "localEnvironment"
+        ].get("localDockerRegistriesFile", {})
+
+        registries_data["mirrors"] = registries_data.get("mirrors", {})
+        registries_data["mirrors"]["whacdamole.registry"] = {
+            "endpoint": endpoints,
+            "rewrites": {"(.*)?ns=whacdamole.registry(.*)": ""},
         }
 
         yaml_str = yaml.dump(registries_data)
@@ -296,6 +297,7 @@ class KubernetesManager:
             extra_hosts:
               - "host.docker.internal:host-gateway"
         """
+
 
 class Whacdamole:
     def __init__(self):

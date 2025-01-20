@@ -13,6 +13,7 @@ spec:
     localDockerRegistryPort: 5000
     localDockerRegistries:
       - "http://my-registry.local:5000"
+    localDockerRegistriesFile: {}
     kubeconfig: "/home/user/.kube/config"
   dockerImages:
     - name: backend
