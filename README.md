@@ -106,7 +106,7 @@ metadata:
 spec:
   name: MyProject
   version: "1.0.0"
-  gitRepository: https://github.com/example/my-project.git
+  gitRepo: https://github.com/example/my-project.git
   branchToWatch: main
   localEnvironment:
     enableLocalKubernetes: true
@@ -129,7 +129,7 @@ spec:
       registry: docker.io/myrepo
       directory: ./services/frontend
   helmDeployments:
-    - gitRepository: https://github.com/example/helm-charts.git
+    - gitRepo: https://github.com/example/helm-charts.git
       branchToWatch: release
       chartPath: charts/mychart
       values: |
@@ -141,7 +141,7 @@ spec:
         environment: production
         debug: "false"
   kustomizeDeployments:
-    - gitRepository: https://github.com/example/kustomize-configs.git
+    - gitRepo: https://github.com/example/kustomize-configs.git
       branchToWatch: develop
       kustomizePath: overlays/production
 ```

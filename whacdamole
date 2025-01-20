@@ -427,11 +427,12 @@ class Whacdamole:
             self.helm_deploy(deployment, kube_config)
 
     def helm_deploy(self, deployment, kube_config):
-        git_repo = deployment.get("gitRepository")
-        helm_repo = deployment.get("helmRepository")
-        helm_repo_path = deployment.get("helmRepositoryPath")
+        git_repo = deployment.get("gitRepo")
+        helm_repo = deployment.get("helmRepo")
+        helm_repo_path = deployment.get("helmRepoPath")
         release = deployment.get("release", "my-release")
         release_path = deployment["releasePath"]
+        namespace = deployment.get("namespace", "default")
         with tempfile.TemporaryDirectory() as tmpdir:
             if git_repo:
                 subprocess.run(["git", "clone", git_repo, tmpdir], check=True)
@@ -447,6 +448,8 @@ class Whacdamole:
                 "helm",
                 "upgrade",
                 "--install",
+                "-n",
+                namespace,
                 "--atomic",
                 release,
                 chart_full_path,
@@ -486,8 +489,9 @@ class Whacdamole:
             self.kustomize_deploy(deployment, kube_config)
 
     def kustomize_deploy(self, deployment, kube_config):
-        git_repo = deployment.get("gitRepository")
+        git_repo = deployment.get("gitRepo")
         kustomize_path = deployment.get("kustomizePath", ".")
+        namespace = deployment.get("namespace", "default")
         with tempfile.TemporaryDirectory() as tmpdir:
             if git_repo:
                 subprocess.run(["git", "clone", git_repo, tmpdir], check=True)
@@ -502,7 +506,14 @@ class Whacdamole:
             for attempt in range(25):
                 try:
                     subprocess.run(
-                        ["kubectl", "apply", "-k", kustomize_full_path],
+                        [
+                            "kubectl",
+                            "apply",
+                            "-n",
+                            namespace,
+                            "-k",
+                            kustomize_full_path,
+                        ],
                         env=cmd_env,
                         check=True,
                     )

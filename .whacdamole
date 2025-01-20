@@ -5,7 +5,7 @@ metadata:
 spec:
   name: Whacdamole
   version: "0.0.1"
-  gitRepository: https://github.com/3percentavos/whacdamole
+  gitRepo: https://github.com/3percentavos/whacdamole
   branchToWatch: main
   localEnvironment:
     enableLocalKubernetes: true

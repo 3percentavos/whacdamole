@@ -35,7 +35,7 @@ spec:
                 version:
                   type: string
                   description: "The current version of the project."
-                gitRepository:
+                gitRepo:
                   type: string
                   description: "URL of the Git repository hosting the project."
                 branchToWatch:
@@ -105,7 +105,7 @@ spec:
                   items:
                     type: object
                     properties:
-                      gitRepository:
+                      gitRepo:
                         type: string
                         description: "Git repository for the Helm charts."
                       branchToWatch:
@@ -123,6 +123,9 @@ spec:
                       releasePath:
                         type: string
                         description: "Path to the Helm chart within the repository."
+                      namespace:
+                        type: string
+                        description: "The namespace to deploy to."
                       values:
                         type: string
                         description: "YAML-formatted string for Helm values."
@@ -132,7 +135,6 @@ spec:
                         additionalProperties:
                           type: string
                     required:
-                      - gitRepository
                       - chartPath
                 kustomizeDeployments:
                   type: array
@@ -140,7 +142,7 @@ spec:
                   items:
                     type: object
                     properties:
-                      gitRepository:
+                      gitRepo:
                         type: string
                         description: "Git repository for Kustomize configurations."
                       branchToWatch:
@@ -149,12 +151,15 @@ spec:
                       kustomizePath:
                         type: string
                         description: "Path to the Kustomize overlay or base."
+                      namespace:
+                        type: string
+                        description: "The namespace to deploy to."
                     required:
-                      - gitRepository
+                      - gitRepo
               required:
                 - name
                 - version
-                - gitRepository
+                - gitRepo
                 - branchToWatch
                 - localEnvironment
                 - dockerImages
