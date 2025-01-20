@@ -41,6 +41,12 @@ spec:
                 branchToWatch:
                   type: string
                   description: "Git branch to monitor for changes."
+                registryImage:
+                  type: string
+                  description: "The image used for self-hosted registry."
+                k3sImage:
+                  type: string
+                  description: "The image used for self-hosted kubernetes."
                 localEnvironment:
                   type: object
                   description: "Configuration for the local environment."

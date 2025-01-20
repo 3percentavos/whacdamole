@@ -51,6 +51,7 @@ import shutil
 from kubernetes import client, config, watch
 import hashlib
 
+
 class DockerHelper:
     @staticmethod
     def has_docker():
@@ -69,9 +70,12 @@ class DockerHelper:
             temp_file_name = f.name
 
         try:
-            subprocess.run(["docker-compose", "-f", temp_file_name] + action, check=True)
+            subprocess.run(
+                ["docker-compose", "-f", temp_file_name] + action, check=True
+            )
         finally:
             os.remove(temp_file_name)
+
 
 class ConfigurationManager:
     def __init__(self, base_dir, config_file):
@@ -91,15 +95,23 @@ class ConfigurationManager:
                 print(f"Error parsing {config_path}: {exc}")
                 sys.exit(1)
 
+
 class NetworkManager:
-    NETWORK_NAME = 'whacdamole-net'
+    NETWORK_NAME = "whacdamole-net"
 
     @staticmethod
     def setup_network():
         print(f"Setting up network: {NetworkManager.NETWORK_NAME}")
         try:
             subprocess.run(
-                ["docker", "network", "create", "--driver", "bridge", NetworkManager.NETWORK_NAME],
+                [
+                    "docker",
+                    "network",
+                    "create",
+                    "--driver",
+                    "bridge",
+                    NetworkManager.NETWORK_NAME,
+                ],
                 check=True,
             )
             print("Network setup successfully.")
@@ -110,17 +122,24 @@ class NetworkManager:
     def teardown_network():
         print(f"Tearing down network: {NetworkManager.NETWORK_NAME}")
         try:
-            subprocess.run(["docker", "network", "rm", NetworkManager.NETWORK_NAME], check=True)
+            subprocess.run(
+                ["docker", "network", "rm", NetworkManager.NETWORK_NAME], check=True
+            )
             print("Network teardown successful.")
         except subprocess.CalledProcessError:
             print("Failed to stop Docker network.")
+
 
 class RegistryManager:
     def __init__(self, config_manager):
         self.config_manager = config_manager
         self.container_name = "whacdamole-registry"
-        self.registry_image = self.config_manager.config_data['spec'].get('registryImage', 'registry:2.8.3')
-        self.port = self.config_manager.config_data["spec"]["localEnvironment"]["localDockerRegistryPort"]
+        self.registry_image = self.config_manager.config_data["spec"].get(
+            "registryImage", "registry:2.8.3"
+        )
+        self.port = self.config_manager.config_data["spec"]["localEnvironment"][
+            "localDockerRegistryPort"
+        ]
 
     def start_registry(self):
         print("Starting local Docker registry...")
@@ -135,7 +154,10 @@ class RegistryManager:
         DockerHelper.run_docker_compose(self.compose_content(), ["down"])
 
     def is_registry_running(self):
-        result = subprocess.run(["docker", "ps", "-q", "-f", f"name={self.container_name}"], stdout=subprocess.PIPE)
+        result = subprocess.run(
+            ["docker", "ps", "-q", "-f", f"name={self.container_name}"],
+            stdout=subprocess.PIPE,
+        )
         return bool(result.stdout.strip())
 
     def compose_content(self):
@@ -153,6 +175,7 @@ class RegistryManager:
           {NetworkManager.NETWORK_NAME}:
             external: true
         """
+
 
 class KubernetesManager:
     def __init__(self, config_manager):
@@ -184,7 +207,7 @@ class KubernetesManager:
         except subprocess.CalledProcessError:
             print("Failed to stop K3s cluster.")
             raise subprocess.CalledProcessError
-        
+
         try:
             shutil.rmtree(self.directory)
         except:
@@ -194,16 +217,16 @@ class KubernetesManager:
         registries_path = os.path.join(self.directory, "registries.yaml")
 
         endpoints = [f"http://whacdamole-registry:5000"]
-        local_registries = self.config_manager.config_data["spec"]["localEnvironment"].get("localDockerRegistries", [])
+        local_registries = self.config_manager.config_data["spec"][
+            "localEnvironment"
+        ].get("localDockerRegistries", [])
         endpoints.extend(local_registries)
 
         registries_data = {
             "mirrors": {
                 "whacdamole.registry": {
                     "endpoint": endpoints,
-                    "rewrites": {
-                        "(.*)?ns=whacdamole.registry(.*)": ""
-                    }
+                    "rewrites": {"(.*)?ns=whacdamole.registry(.*)": ""},
                 }
             }
         }
@@ -212,7 +235,9 @@ class KubernetesManager:
         # Fix keys by quoting them for YAML compatibility
         yaml_str = (
             yaml_str.replace("docker.io:", '"docker.io":')
-            .replace("(.*)?ns=whacdamole.registry(.*)", '"(.*)?ns=whacdamole.registry(.*)"')
+            .replace(
+                "(.*)?ns=whacdamole.registry(.*)", '"(.*)?ns=whacdamole.registry(.*)"'
+            )
             .replace("whacdamole.registry:", '"whacdamole.registry":')
         )
 
@@ -230,7 +255,12 @@ class KubernetesManager:
             image: {self.config_manager.config_data['spec'].get('k3sImage', 'rancher/k3s:v1.32.0-k3s1')}
             container_name: {self.server_name}
             restart: always
-            command: server
+            command:
+              - server  
+              - --disable-cloud-controller
+              - --debug
+              - -d
+              - /var/lib/rancher/k3s
             volumes:
               - {self.directory}:/output
               - {self.directory}/registries.yaml:/etc/rancher/k3s/registries.yaml
@@ -250,7 +280,11 @@ class KubernetesManager:
             image: {self.config_manager.config_data['spec'].get('k3sImage', 'rancher/k3s:v1.32.0-k3s1')}
             container_name: {self.agent_name}
             restart: always
-            command: agent
+            command: 
+              - agent  
+              - --debug
+              - -d
+              - /var/lib/rancher/k3s
             tmpfs: ["/run", "/var/run"]
             privileged: true
             environment:
@@ -263,18 +297,25 @@ class KubernetesManager:
               - "host.docker.internal:host-gateway"
         """
 
-
 class Whacdamole:
     def __init__(self):
         self.args = self.parse_args()
-        self.config_manager = ConfigurationManager(self.args.base_dir, self.args.config_file)
+        self.config_manager = ConfigurationManager(
+            self.args.base_dir, self.args.config_file
+        )
         self.registry_manager = RegistryManager(self.config_manager)
         self.kubernetes_manager = KubernetesManager(self.config_manager)
 
     def parse_args(self):
-        parser = argparse.ArgumentParser(prog="whacdamole", description="Whacdamole CLI")
-        parser.add_argument("--base-dir", default=os.getcwd(), help="Base directory for operations.")
-        parser.add_argument("--config-file", default=".whacdamole", help="Configuration file to use.")
+        parser = argparse.ArgumentParser(
+            prog="whacdamole", description="Whacdamole CLI"
+        )
+        parser.add_argument(
+            "--base-dir", default=os.getcwd(), help="Base directory for operations."
+        )
+        parser.add_argument(
+            "--config-file", default=".whacdamole", help="Configuration file to use."
+        )
         subparsers = parser.add_subparsers(dest="command")
 
         self.add_subparser_commands(subparsers)
@@ -282,19 +323,29 @@ class Whacdamole:
         return parser.parse_args()
 
     def add_subparser_commands(self, subparsers):
-        registry_parser = subparsers.add_parser("registry", help="Manage local Docker registry")
+        registry_parser = subparsers.add_parser(
+            "registry", help="Manage local Docker registry"
+        )
         registry_subparsers = registry_parser.add_subparsers(dest="subcommand")
-        registry_up_parser = registry_subparsers.add_parser("up", help="Start the local registry")
-        registry_down_parser = registry_subparsers.add_parser("down", help="Stop the local registry")
+        registry_up_parser = registry_subparsers.add_parser(
+            "up", help="Start the local registry"
+        )
+        registry_down_parser = registry_subparsers.add_parser(
+            "down", help="Stop the local registry"
+        )
 
         k3s_parser = subparsers.add_parser("k3s", help="Manage K3s cluster")
         k3s_subparsers = k3s_parser.add_subparsers(dest="k3s_command")
         k3s_up_parser = k3s_subparsers.add_parser("up", help="Start K3s cluster")
         k3s_down_parser = k3s_subparsers.add_parser("down", help="Stop K3s cluster")
 
-        build_parser = subparsers.add_parser("build", help="Build and push Docker images")
+        build_parser = subparsers.add_parser(
+            "build", help="Build and push Docker images"
+        )
         deploy_parser = subparsers.add_parser("deploy", help="Deploy configurations")
-        undeploy_parser = subparsers.add_parser("undeploy", help="Stop Kubernetes and Registry")
+        undeploy_parser = subparsers.add_parser(
+            "undeploy", help="Stop Kubernetes and Registry"
+        )
 
     def run(self):
         if self.args.command == "registry":
@@ -317,7 +368,9 @@ class Whacdamole:
             self.undeploy()
 
     def build(self):
-        if self.config_manager.config_data["spec"]["localEnvironment"]["enableLocalDockerRegistry"]:
+        if self.config_manager.config_data["spec"]["localEnvironment"][
+            "enableLocalDockerRegistry"
+        ]:
             self.registry_manager.start_registry()
 
         docker_images = self.config_manager.config_data["spec"]["dockerImages"]
@@ -332,7 +385,10 @@ class Whacdamole:
                 image_build_path = os.path.join(self.args.base_dir, directory)
                 print(f"Building image {full_image_name} from {image_build_path}...")
                 try:
-                    subprocess.run(["docker", "build", "-t", full_image_name, image_build_path], check=True)
+                    subprocess.run(
+                        ["docker", "build", "-t", full_image_name, image_build_path],
+                        check=True,
+                    )
                     subprocess.run(["docker", "push", full_image_name], check=True)
                     print(f"Image {full_image_name} built and pushed successfully.")
                 except subprocess.CalledProcessError:
@@ -343,17 +399,25 @@ class Whacdamole:
         if DockerHelper.has_docker():
             self.build()
 
-        if self.config_manager.config_data["spec"]["localEnvironment"]["enableLocalKubernetes"]:
+        if self.config_manager.config_data["spec"]["localEnvironment"][
+            "enableLocalKubernetes"
+        ]:
             self.kubernetes_manager.start_k3s()
 
-        kube_config = self.kubernetes_manager.kube_config or self.config_manager.config_data["spec"].get(
-            "localEnvironment", {}).get("kubeconfig")
+        kube_config = (
+            self.kubernetes_manager.kube_config
+            or self.config_manager.config_data["spec"]
+            .get("localEnvironment", {})
+            .get("kubeconfig")
+        )
 
         self.deploy_helm(kube_config)
         self.deploy_kustomize(kube_config)
 
     def deploy_helm(self, kube_config):
-        helm_deployments = self.config_manager.config_data["spec"].get("helmDeployments", [])
+        helm_deployments = self.config_manager.config_data["spec"].get(
+            "helmDeployments", []
+        )
         for deployment in helm_deployments:
             self.helm_deploy(deployment, kube_config)
 
@@ -372,8 +436,12 @@ class Whacdamole:
                 cmd_env["KUBECONFIG"] = kube_config
 
             helm_cmd = [
-                "helm", "upgrade", "--install", "--atomic",
-                deployment.get("releaseName", "my-release"), chart_full_path
+                "helm",
+                "upgrade",
+                "--install",
+                "--atomic",
+                deployment.get("releaseName", "my-release"),
+                chart_full_path,
             ]
 
             for attempt in range(10):
@@ -386,7 +454,9 @@ class Whacdamole:
                         sys.exit(1)
 
     def deploy_kustomize(self, kube_config):
-        kustomize_deployments = self.config_manager.config_data["spec"].get("kustomizeDeployments", [])
+        kustomize_deployments = self.config_manager.config_data["spec"].get(
+            "kustomizeDeployments", []
+        )
         for deployment in kustomize_deployments:
             self.kustomize_deploy(deployment, kube_config)
 
@@ -404,12 +474,16 @@ class Whacdamole:
             if kube_config:
                 cmd_env["KUBECONFIG"] = kube_config
 
-            for attempt in range(10):
+            for attempt in range(25):
                 try:
-                    subprocess.run(["kubectl", "apply", "-k", kustomize_full_path], env=cmd_env, check=True)
+                    subprocess.run(
+                        ["kubectl", "apply", "-k", kustomize_full_path],
+                        env=cmd_env,
+                        check=True,
+                    )
                     break
                 except Exception:
-                    time.sleep(5)
+                    time.sleep(10)
                     if attempt == 9:
                         sys.exit(1)
 
