@@ -1,10 +1,5 @@
 <div align="center">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" 
-        srcset="docs/logo.png" >
-      <img alt="Whacdamole logo" 
-        src="docs/logo.png" width="600">
-    </picture>
+    <img alt="Whacdamole logo" src="docs/logo.png" width="600">
 </div>
 
 
