@@ -2,7 +2,7 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" 
         srcset="docs/logo.png" >
-      <img alt="Makie.jl logo" 
+      <img alt="Whacdamole logo" 
         src="docs/logo.png" width="600">
     </picture>
 </div>
@@ -21,7 +21,6 @@ Before using Whacdamole, ensure you have the following installed:
     - **Kubectl**: Installed for interacting with Kubernetes.
 - **Docker**: Installed and configured for building images.
 - **Python 3.12+**: Required if running the CLI tool from source. The following packages are used.
-    - `pyyaml==6.0.2`
     - `ruamel.yaml==0.17.21`
     - `kubernetes==31.0.0`
 - **Git**: For cloning repositories.

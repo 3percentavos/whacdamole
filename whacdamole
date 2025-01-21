@@ -455,9 +455,10 @@ class Whacdamole:
         git_repo = deployment.get("gitRepo")
         helm_repo = deployment.get("helmRepo")
         helm_repo_path = deployment.get("helmRepoPath")
-        release = deployment.get("release", "my-release")
-        release_path = deployment["releasePath"]
-        namespace = deployment.get("namespace", "default")
+        release  = deployment.get("release", "my-release")
+        release_path : str | None = deployment["releasePath"]
+        namespace : str = deployment.get("namespace", "default")
+        overrides : dict = deployment.get("overrides", {})
         with tempfile.TemporaryDirectory() as tmpdir:
             if git_repo:
                 subprocess.run(["git", "clone", git_repo, tmpdir], check=True)
@@ -497,7 +498,12 @@ class Whacdamole:
                 release,
                 chart_full_path,
             ]
+
+            # Let's add our overrides
+            for key, value in overrides.items():
+                helm_cmd += ["--set", f"{key}={value}"]
             
+            # Let's try to deploy
             for attempt in range(10):
                 try:
                     subprocess.run(helm_cmd, env=cmd_env, check=True)
