@@ -296,7 +296,7 @@ class KubernetesManager:
               - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
               - K3S_KUBECONFIG_MODE=666
             hostname: {self.server_name}
-            ports: ["6443:6443", "443:32443", "80:32080"]
+            ports: ["6443:6443", "443:443", "80:80"]
             networks: 
               - whacdamole-net
             extra_hosts:
