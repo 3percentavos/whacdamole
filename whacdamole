@@ -360,11 +360,11 @@ class KubernetesManager:
 class Whacdamole:
     def __init__(self):
         self.args = self.parse_args()
-        self.config_manager = ConfigurationManager(
+        self.config_manager: ConfigurationManager = ConfigurationManager(
             self.args.base_dir, self.args.config_file
         )
-        self.registry_manager = RegistryManager(self.config_manager)
-        self.kubernetes_manager = KubernetesManager(self.config_manager)
+        self.registry_manager: RegistryManager = RegistryManager(self.config_manager)
+        self.kubernetes_manager: KubernetesManager = KubernetesManager(self.config_manager)
 
     def parse_args(self):
         parser = argparse.ArgumentParser(
@@ -593,7 +593,7 @@ class Whacdamole:
         if DockerHelper.has_docker():
             self.registry_manager.stop_registry()
             self.kubernetes_manager.stop_k3s()
-            NetworkManager.teardown_network()
+            NetworkManager.teardown_network(self.config_manager)
 
 
 if __name__ == "__main__":
