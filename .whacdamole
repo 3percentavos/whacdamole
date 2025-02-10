@@ -1,3 +1,4 @@
+---
 apiVersion: whackdamole.github.com/v1beta
 kind: Whacdamole
 metadata:
@@ -14,6 +15,8 @@ spec:
     localDockerRegistryPort: 35000
     localDockerRegistries: []
     localDockerRegistriesFile: {}
+    localKubernetesPorts:
+      - 3000
   dockerImages:
     - name: whacdamole
       tags:

@@ -1,3 +1,4 @@
+---
 apiVersion: whackdamole.github.com/v1beta
 kind: Whacdamole
 metadata:
