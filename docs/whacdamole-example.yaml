@@ -30,6 +30,9 @@ spec:
             - "https://registry.example.com:5000"
           rewrites:
             "^rancher/(.*)": "mirrorproject/rancher-images/$1"
+
+    localKubernetesPorts:
+      - 1234
     kubeconfig: "/home/user/.kube/config"
   dockerImages:
     - name: backend
@@ -48,6 +51,9 @@ spec:
     - gitRepo: https://github.com/example/helm-charts.git
       branchToWatch: release
       releasePath: charts/mychart
+      releaseVersion: 1.0.0
+      helmRepo: helm-repo
+      helmRepoPath: https://repo/dir/
       values: |
         replicaCount: 2
         image:

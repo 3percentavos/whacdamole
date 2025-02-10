@@ -61,7 +61,7 @@ class StringableYAML(ruamel.yaml.YAML):
         ruamel.yaml.YAML.dump(self, data, stream, **kw)
         if inefficient:
             return stream.getvalue()
-        
+
     @staticmethod
     def get_instance():
         yaml = StringableYAML()
@@ -170,7 +170,6 @@ class RegistryManager:
 
     def stop_registry(self):
         print("Stopping local Docker registry...")
-        NetworkManager.teardown_network()
         DockerHelper.run_docker_compose(self.compose_content(), ["down"])
 
     def is_registry_running(self):
@@ -202,9 +201,10 @@ class KubernetesManager:
         self.directory = os.path.join(os.getcwd(), ".whacdamoleout/k3s")
         self.server_name = "whacdamole-k8s-server"
         self.agent_name = "whacdamole-k8s-agent"
-        self.traefik_enabled = (
-            self.config_manager.config_data['spec']['localEnvironment']
-            .get('enableLocalKubernetesTraefik', True))
+        self.default_ports = ["80:80", "443:443", "6443:6443"]
+        self.traefik_enabled = self.config_manager.config_data["spec"][
+            "localEnvironment"
+        ].get("enableLocalKubernetesTraefik", True)
         self.kube_config = None
 
     def start_k3s(self):
@@ -255,7 +255,7 @@ class KubernetesManager:
         }
 
         yaml_str = StringableYAML.get_instance().dump(registries_data)
-        
+
         # Fix keys by quoting them for YAML compatibility
         yaml_str = (
             yaml_str.replace("docker.io:", '"docker.io":')
@@ -267,6 +267,20 @@ class KubernetesManager:
 
         with open(registries_path, "w") as f:
             f.write(yaml_str)
+
+    def k3s_port_definition(self):
+        def _quotes_please(string):
+            return f'"{string}"'
+        
+        configured_ports: list[str] = self.config_manager.config_data["spec"]["localEnvironment"].get(
+                "localKubernetesPorts", []
+            )
+        ports: list[str] = map(
+            _quotes_please,
+            configured_ports + list(set(self.default_ports) - set(configured_ports)),
+        )
+
+        return ", ".join(ports)
 
     def k3s_compose_content(self):
         return f"""
@@ -296,7 +310,7 @@ class KubernetesManager:
               - K3S_KUBECONFIG_OUTPUT=/output/kubeconfig.yaml
               - K3S_KUBECONFIG_MODE=666
             hostname: {self.server_name}
-            ports: ["6443:6443", "443:443", "80:80"]
+            ports: [{self.k3s_port_definition()}]
             networks: 
               - whacdamole-net
             extra_hosts:
@@ -455,10 +469,11 @@ class Whacdamole:
         git_repo = deployment.get("gitRepo")
         helm_repo = deployment.get("helmRepo")
         helm_repo_path = deployment.get("helmRepoPath")
-        release  = deployment.get("release", "my-release")
-        release_path : str | None = deployment["releasePath"]
-        namespace : str = deployment.get("namespace", "default")
-        overrides : dict = deployment.get("overrides", {})
+        release = deployment.get("release", "my-release")
+        release_path: str | None = deployment["releasePath"]
+        release_version: str | None = deployment["releaseVersion"]
+        namespace: str = deployment.get("namespace", "default")
+        overrides: dict = deployment.get("overrides", {})
         with tempfile.TemporaryDirectory() as tmpdir:
             if git_repo:
                 subprocess.run(["git", "clone", git_repo, tmpdir], check=True)
@@ -499,10 +514,13 @@ class Whacdamole:
                 chart_full_path,
             ]
 
+            if release_version:
+                helm_cmd += ["--version", release_version]
+
             # Let's add our overrides
             for key, value in overrides.items():
                 helm_cmd += ["--set", f"{key}={value}"]
-            
+
             # Let's try to deploy
             for attempt in range(10):
                 try:
@@ -558,7 +576,8 @@ class Whacdamole:
     def undeploy(self):
         if DockerHelper.has_docker():
             self.registry_manager.stop_registry()
-        self.kubernetes_manager.stop_k3s()
+            self.kubernetes_manager.stop_k3s()
+            NetworkManager.teardown_network()
 
 
 if __name__ == "__main__":
