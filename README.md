@@ -174,17 +174,30 @@ Builds all Docker images defined in the `.whacdamole` configuration and pushes t
 whacdamole build
 ```
 
-#### `whacdamole deploy`
+#### `whacdamole up`
 
 **Description:**  
-Deploys all specified Helm charts and Kustomize configurations. If there are Git repository overrides, Whacdamole pulls those repositories and deploys from the specified paths using Helm and kubectl.
+Deploys all specified Helm charts and Kustomize configurations. If there are Git repository overrides, Whacdamole pulls those repositories and deploys from the specified paths using Helm and kubectl. This will also spin up a registry and a Kubernetes cluster if specified.
 
 **Usage:**
 
 ```bash
-whacdamole deploy
+whacdamole up
 ```
 
+**Note:**  
+Ensure that this command is executed in an environment with access to the Kubernetes API server, typically from within a Kubernetes cluster.
+
+#### `whacdamole down`
+
+**Description:**  
+Tears down all specified Helm charts and Kustomize configurations. This will also tear down the associated Kubernetes cluster and Docker registry if specified.
+
+**Usage:**
+
+```bash
+whacdamole down
+```
 
 **Note:**  
 Ensure that this command is executed in an environment with access to the Kubernetes API server, typically from within a Kubernetes cluster.
@@ -193,9 +206,11 @@ Ensure that this command is executed in an environment with access to the Kubern
 
 - [x] Docker registry.
 - [x] Docker builds.
-- [ ] `k3d` or another Kubernetes deployment with insecure registries.
-- [x] Helm and Kustomize deployment
+- [x] `k3s` or another Kubernetes deployment with insecure registries.
+- [x] Helm and Kustomize deployment.
 - [ ] GitOps.
+- [ ] Look into using `cltptl` resources or similar.
+- [ ] Look into tilt dev integration.
 
 ## License 📜
 

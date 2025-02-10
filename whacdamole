@@ -101,6 +101,11 @@ class ConfigurationManager:
         self.base_dir = base_dir
         self.config_data = self.load_config(config_file)
 
+    def get_project_name(self):
+        return self.config_data["metadata"].get(
+            "name", "whacdamole"
+        )
+
     def load_config(self, config_file):
         config_path = os.path.join(self.base_dir, config_file)
         if not os.path.exists(config_path):
@@ -116,11 +121,16 @@ class ConfigurationManager:
 
 
 class NetworkManager:
-    NETWORK_NAME = "whacdamole-net"
+    @staticmethod
+    def get_network_name(config_manager: ConfigurationManager):
+        project_name = config_manager.get_project_name()
+        return f"{project_name}-network"
 
     @staticmethod
-    def setup_network():
-        print(f"Setting up network: {NetworkManager.NETWORK_NAME}")
+    def setup_network(config_manager: ConfigurationManager):
+        network_name = NetworkManager.get_network_name(config_manager)
+
+        print(f"Setting up network: {network_name}")
         try:
             subprocess.run(
                 [
@@ -129,7 +139,7 @@ class NetworkManager:
                     "create",
                     "--driver",
                     "bridge",
-                    NetworkManager.NETWORK_NAME,
+                    network_name,
                 ],
                 check=True,
             )
@@ -138,11 +148,13 @@ class NetworkManager:
             print("Network already exists or could not be created.")
 
     @staticmethod
-    def teardown_network():
-        print(f"Tearing down network: {NetworkManager.NETWORK_NAME}")
+    def teardown_network(config_manager: ConfigurationManager):
+        network_name = NetworkManager.get_network_name(config_manager)
+
+        print(f"Tearing down network: {network_name}")
         try:
             subprocess.run(
-                ["docker", "network", "rm", NetworkManager.NETWORK_NAME], check=True
+                ["docker", "network", "rm", network_name], check=True
             )
             print("Network teardown successful.")
         except subprocess.CalledProcessError:
@@ -150,10 +162,10 @@ class NetworkManager:
 
 
 class RegistryManager:
-    def __init__(self, config_manager):
-        self.config_manager = config_manager
-        self.container_name = "whacdamole-registry"
-        self.registry_image = self.config_manager.config_data["spec"].get(
+    def __init__(self, config_manager: ConfigurationManager):
+        self.config_manager: ConfigurationManager = config_manager
+        self.container_name: str = "whacdamole-registry"
+        self.registry_image: str = self.config_manager.config_data["spec"].get(
             "registryImage", "registry:2.8.3"
         )
         self.port = self.config_manager.config_data["spec"]["localEnvironment"][
@@ -165,7 +177,7 @@ class RegistryManager:
         if self.is_registry_running():
             print("Local registry is already running.")
             return
-        NetworkManager.setup_network()
+        NetworkManager.setup_network(self.config_manager)
         DockerHelper.run_docker_compose(self.compose_content(), ["up", "-d"])
 
     def stop_registry(self):
@@ -180,6 +192,8 @@ class RegistryManager:
         return bool(result.stdout.strip())
 
     def compose_content(self):
+        network_name = NetworkManager.get_network_name(self.config_manager)
+
         return f"""
         services:
           registry:
@@ -188,19 +202,19 @@ class RegistryManager:
             ports:
               - {self.port}:5000
             networks:
-              - {NetworkManager.NETWORK_NAME}
+              - {network_name}
         networks:
-          {NetworkManager.NETWORK_NAME}:
+          {network_name}:
             external: true
         """
 
 
 class KubernetesManager:
-    def __init__(self, config_manager):
+    def __init__(self, config_manager: ConfigurationManager):
         self.config_manager = config_manager
         self.directory = os.path.join(os.getcwd(), ".whacdamoleout/k3s")
-        self.server_name = "whacdamole-k8s-server"
-        self.agent_name = "whacdamole-k8s-agent"
+        self.server_name = f"{config_manager.get_project_name()}-k8s-server"
+        self.agent_name = f"{config_manager.get_project_name()}-k8s-agent"
         self.default_ports = ["80:80", "443:443", "6443:6443"]
         self.traefik_enabled = self.config_manager.config_data["spec"][
             "localEnvironment"
@@ -283,6 +297,8 @@ class KubernetesManager:
         return ", ".join(ports)
 
     def k3s_compose_content(self):
+        network_name = NetworkManager.get_network_name(self.config_manager)
+
         return f"""
         networks:
           whacdamole-net:
@@ -312,7 +328,7 @@ class KubernetesManager:
             hostname: {self.server_name}
             ports: [{self.k3s_port_definition()}]
             networks: 
-              - whacdamole-net
+              - {network_name}
             extra_hosts:
               - "host.docker.internal:host-gateway"
           agent:
@@ -335,7 +351,7 @@ class KubernetesManager:
               - K3S_TOKEN=secret
             hostname: {self.agent_name}
             networks: 
-              - whacdamole-net
+              - {network_name}
             extra_hosts:
               - "host.docker.internal:host-gateway"
         """
@@ -386,9 +402,9 @@ class Whacdamole:
         build_parser = subparsers.add_parser(
             "build", help="Build and push Docker images"
         )
-        deploy_parser = subparsers.add_parser("deploy", help="Deploy configurations")
-        undeploy_parser = subparsers.add_parser(
-            "undeploy", help="Stop Kubernetes and Registry"
+        up_parser = subparsers.add_parser("up", help="Deploy configurations")
+        down_parser = subparsers.add_parser(
+            "down", help="Stop Kubernetes and Registry"
         )
 
     def run(self):
@@ -406,9 +422,9 @@ class Whacdamole:
 
         elif self.args.command == "build":
             self.build()
-        elif self.args.command == "deploy":
+        elif self.args.command == "up":
             self.deploy()
-        elif self.args.command == "undeploy":
+        elif self.args.command == "down":
             self.undeploy()
 
     def build(self):
