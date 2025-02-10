@@ -301,7 +301,7 @@ class KubernetesManager:
 
         return f"""
         networks:
-          whacdamole-net:
+          {network_name}:
             external: true
         services:
           server:
