@@ -487,7 +487,7 @@ class Whacdamole:
         helm_repo_path = deployment.get("helmRepoPath")
         release = deployment.get("release", "my-release")
         release_path: str | None = deployment["releasePath"]
-        release_version: str | None = deployment["releaseVersion"]
+        release_version: str | None = deployment.get("releaseVersion", None)
         namespace: str = deployment.get("namespace", "default")
         overrides: dict = deployment.get("overrides", {})
         with tempfile.TemporaryDirectory() as tmpdir:
