@@ -17,7 +17,7 @@ spec:
     localDockerRegistriesFile: {}
     localKubernetesAgentCount: 1
     localKubernetesPorts:
-      - 3000
+      - 3000:3000
   dockerImages:
     - name: whacdamole
       tags:
