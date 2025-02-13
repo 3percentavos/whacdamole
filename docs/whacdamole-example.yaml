@@ -32,6 +32,7 @@ spec:
           rewrites:
             "^rancher/(.*)": "mirrorproject/rancher-images/$1"
 
+    localKubernetesAgentCount: 1
     localKubernetesPorts:
       - 1234
     kubeconfig: "/home/user/.kube/config"

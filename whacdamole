@@ -215,6 +215,9 @@ class KubernetesManager:
         self.directory = os.path.join(os.getcwd(), ".whacdamoleout/k3s")
         self.server_name = f"{config_manager.get_project_name()}-k8s-server"
         self.agent_name = f"{config_manager.get_project_name()}-k8s-agent"
+        self.agent_count = self.config_manager.config_data["spec"][
+            "localEnvironment"
+        ].get("localKubernetesAgentCount", 1)
         self.default_ports = ["80:80", "443:443", "6443:6443"]
         self.traefik_enabled = self.config_manager.config_data["spec"][
             "localEnvironment"
@@ -295,11 +298,39 @@ class KubernetesManager:
         )
 
         return ", ".join(ports)
+    
+    def agent_compose_content(self, agent_id):
+        network_name = NetworkManager.get_network_name(self.config_manager)
+
+        return f"""
+          agent{agent_id}:
+            image: {self.config_manager.config_data['spec'].get('k3sImage', 'rancher/k3s:v1.32.0-k3s1')}
+            container_name: {self.agent_name}-{agent_id}
+            restart: always
+            command: 
+              - agent  
+              - --snapshotter=native
+              - --debug
+              - -d
+              - /var/lib/rancher/k3s
+            volumes:
+              - {self.directory}/registries.yaml:/etc/rancher/k3s/registries.yaml
+            tmpfs: ["/run", "/var/run"]
+            privileged: true
+            environment:
+              - K3S_URL=https://server:6443
+              - K3S_TOKEN=secret
+            hostname: {self.agent_name}-{agent_id}
+            networks: 
+              - {network_name}
+            extra_hosts:
+              - "host.docker.internal:host-gateway"
+        """
 
     def k3s_compose_content(self):
         network_name = NetworkManager.get_network_name(self.config_manager)
 
-        return f"""
+        compose = f"""
         networks:
           {network_name}:
             external: true
@@ -311,7 +342,7 @@ class KubernetesManager:
             command:
               - server  
               - --disable-cloud-controller
-              - --snapshotter=fuse-overlayfs
+              - --snapshotter=native
               - --debug
               - -d
               - /var/lib/rancher/k3s
@@ -331,30 +362,12 @@ class KubernetesManager:
               - {network_name}
             extra_hosts:
               - "host.docker.internal:host-gateway"
-          agent:
-            image: {self.config_manager.config_data['spec'].get('k3sImage', 'rancher/k3s:v1.32.0-k3s1')}
-            container_name: {self.agent_name}
-            restart: always
-            command: 
-              - agent  
-              - --snapshotter=fuse-overlayfs
-              - --debug
-              - -d
-              - /var/lib/rancher/k3s
-              {f"- --disable=traefik" if not self.traefik_enabled else ""}
-            volumes:
-              - {self.directory}/registries.yaml:/etc/rancher/k3s/registries.yaml
-            tmpfs: ["/run", "/var/run"]
-            privileged: true
-            environment:
-              - K3S_URL=https://server:6443
-              - K3S_TOKEN=secret
-            hostname: {self.agent_name}
-            networks: 
-              - {network_name}
-            extra_hosts:
-              - "host.docker.internal:host-gateway"
         """
+
+        for node_count in range(self.agent_count):
+            compose += f"\n{self.agent_compose_content(node_count)}"
+
+        return compose
 
 
 class Whacdamole:

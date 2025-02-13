@@ -15,6 +15,7 @@ spec:
     localDockerRegistryPort: 35000
     localDockerRegistries: []
     localDockerRegistriesFile: {}
+    localKubernetesAgentCount: 1
     localKubernetesPorts:
       - 3000
   dockerImages:

@@ -71,6 +71,14 @@ spec:
                     localDockerRegistriesFile:
                       type: object
                       description: "Raw YAML describing the  `registries.yaml` file you need."
+                    localKubernetesAgentCount:
+                      type: integer
+                      description: "The number of agents to spin up."
+                    localKubernetesPorts:
+                      type: array
+                      description: "What ports to export."
+                      items:
+                        type: integer
                     kubeconfig:
                       type: string
                       description: "Path to the Kubernetes configuration file."
