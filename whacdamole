@@ -164,7 +164,7 @@ class NetworkManager:
 class RegistryManager:
     def __init__(self, config_manager: ConfigurationManager):
         self.config_manager: ConfigurationManager = config_manager
-        self.container_name: str = "whacdamole-registry"
+        self.container_name: str = f"{self.config_manager.get_project_name()}-registry"
         self.registry_image: str = self.config_manager.config_data["spec"].get(
             "registryImage", "registry:2.8.3"
         )
@@ -218,7 +218,7 @@ class KubernetesManager:
         self.agent_count = self.config_manager.config_data["spec"][
             "localEnvironment"
         ].get("localKubernetesAgentCount", 1)
-        self.default_ports = ["80:80", "443:443", "6443:6443"]
+        self.default_ports = ["6443:6443"]
         self.traefik_enabled = self.config_manager.config_data["spec"][
             "localEnvironment"
         ].get("enableLocalKubernetesTraefik", True)
@@ -255,7 +255,7 @@ class KubernetesManager:
     def create_registries_file(self):
         registries_path = os.path.join(self.directory, "registries.yaml")
 
-        endpoints = [f"http://whacdamole-registry:5000"]
+        endpoints = [f"http://registry:5000"]
         local_registries = self.config_manager.config_data["spec"][
             "localEnvironment"
         ].get("localDockerRegistries", [])

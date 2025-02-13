@@ -34,7 +34,9 @@ spec:
 
     localKubernetesAgentCount: 1
     localKubernetesPorts:
-      - 1234
+      - 1234:1234
+      - 80:80
+      - 443:443
     kubeconfig: "/home/user/.kube/config"
   dockerImages:
     - name: backend
