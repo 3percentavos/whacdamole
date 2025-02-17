@@ -12,7 +12,7 @@ simplifies the processes of:
 - Setting up and managing a local Docker registry.
 - Supporting GitOps routines for continuous deployment.
 
-This script uses a YAML configuration file (default: `.whacdamole`) to define
+This script uses a YAML configuration file (default: `.whackfile`) to define
 project details, Docker images, and deployment configurations. 
 
 See https://github.com/3percentavos/whacdamole for more.
@@ -212,7 +212,7 @@ class RegistryManager:
 class KubernetesManager:
     def __init__(self, config_manager: ConfigurationManager):
         self.config_manager = config_manager
-        self.directory = os.path.join(os.getcwd(), ".whacdamoleout/k3s")
+        self.directory = os.path.join(os.getcwd(), ".whacdamole/k3s")
         self.server_name = f"{config_manager.get_project_name()}-k8s-server"
         self.agent_name = f"{config_manager.get_project_name()}-k8s-agent"
         self.agent_count = self.config_manager.config_data["spec"][
@@ -387,7 +387,7 @@ class Whacdamole:
             "--base-dir", default=os.getcwd(), help="Base directory for operations."
         )
         parser.add_argument(
-            "--config-file", default=".whacdamole", help="Configuration file to use."
+            "--config-file", default=".whackfile", help="Configuration file to use."
         )
         subparsers = parser.add_subparsers(dest="command")
 
